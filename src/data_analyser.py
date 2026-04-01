@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import seaborn as sns
 from scipy import stats
 import matplotlib.pyplot as plt
@@ -192,3 +193,93 @@ class Analyser:
                 suggested_transformations[var_val] = "Yeo-Johnson or Quantile Transformation"
                 
         return suggested_transformations
+
+    # NOTE: IN Progress
+    def extract_dataset_outliers_fast(self, threshold=0.99, local_weight=0.75, variance_buffer=0.15):
+        """
+        Extracts outliers with a looser tolerance to reduce false positives.
+        
+        Args:
+            threshold (float): Increased to 0.99 to only flag the most extreme 1% of data.
+            local_weight (float): Weight of personal vs peer distribution.
+            variance_buffer (float): Prevents the "micro-variance trap" by ensuring a user's 
+                                     local standard deviation never drops below a percentage 
+                                     (e.g., 15%) of the peer standard deviation.
+        """
+        df = self.data.dropna(subset=['value']).copy()
+        
+        df['val_sq'] = df['value'] ** 2
+        
+        # Local aggregations
+        local_aggs = df.groupby(['id', 'variable']).agg(
+            n_local=('value', 'count'),
+            sum_local=('value', 'sum'),
+            sumsq_local=('val_sq', 'sum')
+        ).reset_index()
+        
+        # Global aggregations
+        global_aggs = local_aggs.groupby('variable').agg(
+            n_global=('n_local', 'sum'),
+            sum_global=('sum_local', 'sum'),
+            sumsq_global=('sumsq_local', 'sum')
+        ).reset_index()
+        
+        df = df.merge(local_aggs, on=['id', 'variable'])
+        df = df.merge(global_aggs, on='variable')
+        
+        # Peer aggregations (Global - Local)
+        df['n_peer'] = df['n_global'] - df['n_local']
+        df['sum_peer'] = df['sum_global'] - df['sum_local']
+        df['sumsq_peer'] = df['sumsq_global'] - df['sumsq_local']
+        
+        def calc_std(n, sums, sumsq):
+            variance = (sumsq - (sums**2 / np.maximum(n, 1))) / np.maximum(n - 1, 1)
+            return np.sqrt(np.maximum(variance, 0))
+            
+        # Calculate raw standard deviations
+        df['mean_local'] = np.where(df['n_local'] > 0, df['sum_local'] / df['n_local'], 0)
+        raw_std_local = calc_std(df['n_local'], df['sum_local'], df['sumsq_local'])
+        
+        df['mean_peer'] = np.where(df['n_peer'] > 0, df['sum_peer'] / df['n_peer'], 0)
+        df['std_peer'] = calc_std(df['n_peer'], df['sum_peer'], df['sumsq_peer'])
+        
+        # Apply the Variance Buffer to loosen strict local tracking
+        # If std_peer is 0, fallback to 1e-9 to prevent true division by zero
+        safe_std_peer = np.where(df['std_peer'] == 0, 1e-9, df['std_peer'])
+        df['std_local'] = np.maximum(raw_std_local, safe_std_peer * variance_buffer)
+        
+        # Calculate t-statistics
+        t_local = (df['value'] - df['mean_local']) / df['std_local']
+        t_peer = (df['value'] - df['mean_peer']) / safe_std_peer
+        
+        # Calculate Probabilities
+        p_val_local = stats.t.sf(np.abs(t_local), df=np.maximum(df['n_local'] - 1, 1)) * 2
+        prob_local = np.where(df['n_local'] >= 2, 1.0 - p_val_local, 0.0)
+        
+        p_val_peer = stats.t.sf(np.abs(t_peer), df=np.maximum(df['n_peer'] - 1, 1)) * 2
+        prob_peer = np.where(df['n_peer'] >= 2, 1.0 - p_val_peer, 0.0)
+        
+        peer_weight = 1.0 - local_weight
+        conditions = [
+            (df['n_local'] < 2) & (df['n_peer'] >= 2),
+            (df['n_peer'] < 2) & (df['n_local'] >= 2),
+            (df['n_local'] >= 2) & (df['n_peer'] >= 2)
+        ]
+        choices = [
+            prob_peer,
+            prob_local,
+            (prob_local * local_weight) + (prob_peer * peer_weight)
+        ]
+        df['outlier_probability'] = np.select(conditions, choices, default=0.0)
+        
+        flagged_outliers = df[df['outlier_probability'] >= threshold].copy()
+        
+        cols_to_drop = [
+            'val_sq', 'n_local', 'sum_local', 'sumsq_local', 
+            'n_global', 'sum_global', 'sumsq_global',
+            'n_peer', 'sum_peer', 'sumsq_peer', 
+            'mean_local', 'std_local', 'mean_peer', 'std_peer'
+        ]
+        flagged_outliers = flagged_outliers.drop(columns=cols_to_drop)
+        
+        return flagged_outliers.sort_values(by=['variable', 'outlier_probability'], ascending=[True, False])
