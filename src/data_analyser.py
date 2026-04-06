@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 def load_data(file_path: str | None = None) -> pd.DataFrame:
     """ Load the dataset from a CSV file. """
     if file_path is None:
-        file_path = Path("data/dataset_mood_smartphone.csv")
+        file_path = Path("src/data/dataset_mood_smartphone.csv")
     df = pd.read_csv(file_path, index_col=0)  # Assuming the first column is an index
     df['time'] = pd.to_datetime(df['time'])  # Ensure 'time' column is in datetime format
     return df
@@ -18,6 +18,9 @@ def load_data(file_path: str | None = None) -> pd.DataFrame:
 class Visualiser:
     def __init__(self, data: pd.DataFrame):
         self.data = data
+
+        # Create date column
+        self.data['date'] = self.data['time'].dt.date
 
     def datapoint_counts_per_id(self):
         """ Visualize the number of datapoints per id. """
@@ -96,6 +99,51 @@ class Visualiser:
             else:
                 plt.show()
     
+    def timestamp_heatmap(self, save: bool = False):
+        """Plots heatmap of daily variable occurences for every user on every day. For each variable a
+           plot is generated. Darkblue means that the user has at least one entry of the variable
+           for that day, while white means the user has no entry.
+
+        Args:
+            save (bool, optional): Toggle saving vs showing plots. Defaults to showing (False).
+        """
+
+        # path for saving
+        dir = Path("results/eda/multi_barcode")
+
+        grouped = self.data.groupby('variable')
+        for var, group in grouped:
+
+            # reshape and aggregate variable data to desired format -> (id, date), with entries being binary indicators whether 
+            # there are any variable values for that individual and day.
+            presence = group.pivot_table(
+                index = 'id',
+                columns = 'date',
+                values = 'value',
+                aggfunc = 'count'
+            ).fillna(0)
+            presence_bin = (presence > 0).astype(int)
+
+            # plot
+            plt.figure(figsize=(16, 8))
+            sns.heatmap(presence_bin,
+                        cmap="YlGnBu",
+                        cbar=False,
+                        linewidths=.5,
+                        linecolor="lightgrey")
+            plt.title(f"Multi-User Barcode for {var}")
+            plt.xlabel("Date")
+            plt.ylabel("User ID")
+            plt.tight_layout()
+
+            if save:
+                dir.mkdir(parents = True, exist_ok= True)
+                save_path = dir / f"multibar_{var}.png"
+                plt.savefig(save_path)
+                plt.close()
+            else:
+                plt.show()
+
     def value_distribution_per_id(self):
         """ Visualize the distribution of values per id. """
         grouped = self.data.groupby('id')
