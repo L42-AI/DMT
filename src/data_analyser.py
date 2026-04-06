@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List
 
 import pandas as pd
 import numpy as np
@@ -60,6 +61,40 @@ class Visualiser:
             plt.grid(True, linestyle='--', alpha=0.7)
             plt.tight_layout()
             plt.show()
+
+    def timestamp_barcode(self, vars: List[str], save: bool = False):
+        """Barcode plots to visualize the times of the variable occurences in the data for every individual
+
+
+        Args:
+            vars (List[str]): Variables to compare
+            save (bool, optional): Toggle saving vs showing plots. Defaults to showing(False).
+        """
+        # Path for saving
+        dir = Path('results/eda/barcode')
+
+        grouped = self.data.groupby("id")
+        for id, group in grouped:
+            plt.figure(figsize = (15, 6))
+
+            for i, var in enumerate(vars):    
+                # series of timestamps of variable for user
+                var_times = group[group['variable'] == var]['time']
+                # plot vertical lines, use i for plotting vertically
+                plt.vlines(var_times, i - 0.4, i + 0.4, color = 'midnightblue', alpha = 0.4, linewidth = 0.5)
+
+            plt.yticks(range(len(vars)), vars)
+            plt.title(f"ID: {id}, Observation Density")
+            plt.xlabel("Time")
+
+            if save:
+                dir.mkdir(parents=True, exist_ok=True)
+                save_name = dir / f"barcode_{id}.png"
+                plt.savefig(save_name, bbox_inches = 'tight')
+                plt.close()
+                continue
+            else:
+                plt.show()
     
     def value_distribution_per_id(self):
         """ Visualize the distribution of values per id. """
