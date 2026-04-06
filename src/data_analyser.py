@@ -22,6 +22,41 @@ class Visualiser:
         # Create date column
         self.data['date'] = self.data['time'].dt.date
 
+    def import_data(self, data: pd.DataFrame):
+        """Import new data to Visualizer, f.e. after using Analyser class to edit data.
+
+        Args:
+            data (pd.DataFrame): The data to import. 
+        """
+        self.data = data
+
+    def descriptives(self):
+        ''' Descriptive statistics for all variables of the dataset '''
+        data_audit = self.data.groupby('variable')['value'].describe()
+        print(data_audit, '\n')
+
+    def individual_outlier_plot(self, save: bool = False):
+        """Plot the central tendencies of individuals across all variables. To show whether indivual tendencies for certain
+           variables are outside the norm for some variables. F.e. an individual who has very extreme tendencies across many
+           variables might be problematic.
+
+        Args:
+            save (bool, optional): Toggle saving vs showing plots. Defaults to showing(False).
+        """
+        dir = Path("results/eda")
+        stats = self.data.groupby(['id', 'variable'])['value'].agg(['mean', 'std']).reset_index()
+        means = stats.pivot(index = 'id', columns='variable', values='mean')        
+        z_scores = (means - means.mean()) / means.std()
+        plt.figure(figsize=(12, 8))
+        sns.heatmap(z_scores, annot=True, cmap = "RdBu_r", center=0)
+        plt.title("Individual Outlier Profile (Z-scores of Means)")
+        if save:
+            dir.mkdir(parents=True, exist_ok=True)
+            plt.savefig(dir / "individual_outlier_plot.png")
+            plt.close()
+        else:
+            plt.show()
+
     def datapoint_counts_per_id(self):
         """ Visualize the number of datapoints per id. """
         grouped = self.data.groupby('id').size()
@@ -229,6 +264,22 @@ class Analyser:
     def __init__(self, data: pd.DataFrame):
         self.data = data
 
+    def cap_variables(self, vars: List[str], cap: float, min: bool = True):
+        """ Caps minimum and maximum values of variables. F.e. some variables should not have negative values, or some variables have outliers
+            that need to be capped
+
+        Args:
+            vars (List[str]): List of variable names to cap the minimum of.
+            cap (float)     : The cap value
+            min (bool)      : Whether to cap minimum or maximum values. Default to minimum (True)
+        """
+        if min:
+            mask = self.data['variable'].isin(vars) & (self.data['value'] < cap)
+        else:
+            mask = self.data['variable'].isin(vars) & (self.data['value'] > cap)
+        self.data.loc[mask, 'value'] = cap # cap at 0? or set to NA?
+            
+
     def design_mat(self):
         self.data['time'] = pd.to_datetime(self.data['time'])
         design_mat = self.data.pivot_table(index = ['id', 'time'],
@@ -238,11 +289,6 @@ class Analyser:
                                            )
         print(design_mat.head())
 
-    def descriptives(self):
-        ''' Descriptive statistics for all variables of the dataset '''
-        print(" === Descriptives ===")
-        data_audit = self.data.groupby('variable')['value'].describe()
-        print(data_audit, '\n')
 
     def daily_format(self):
         # In progress
@@ -262,8 +308,6 @@ class Analyser:
         data_daily_mean = self.data[mean_mask].groupby(['id', 'date', 'variable'])['value'].mean().unstack()
         data_daily = pd.concat([data_daily_mean, data_daily_sum], axis = 1)
         
-
-    
         # input 0s as values for duration variables on inactive days 
         duration_vars = [var for var in data_daily.columns if var in sum_vars]
         data_daily[duration_vars] = data_daily[duration_vars].fillna(0)

@@ -10,10 +10,22 @@ def main():
     visualiser = Visualiser(df)
     analyser = Analyser(df)
 
-    # visualiser.timestamp_barcode(
-    #     vars = ["mood", "activity", "screen", "circumplex.arousal"],
-    #     save = True)
+    # Print describives of each variable
+    visualiser.descriptives()
+
+    # builtin and entertainment have negative minimum values, set any values smaller than 0 to 0.
+    analyser.cap_variables(vars = ['appCat.builtin', 'appCat.entertainment'], cap=0.0)
+
+    # import edited data back into Visualiser, check descriptives again
+    visualiser.import_data(analyser.data)
+    visualiser.descriptives() # minimum values for these variables are now 0.
+
+    visualiser.individual_outlier_plot(save=True)
+    visualiser.timestamp_barcode(
+        vars = ["mood", "activity", "screen", "circumplex.arousal"],
+        save = True)
     visualiser.timestamp_heatmap(save=True)
+
     # visualiser.descriptives()
     # visualiser.datapoint_counts_per_id()
     # visualiser.timestamp_distribution_per_id()
