@@ -20,11 +20,23 @@ def main():
     visualiser.import_data(analyser.data)
     visualiser.descriptives() # minimum values for these variables are now 0.
 
-    visualiser.individual_outlier_plot(save=True)
-    visualiser.timestamp_barcode(
-        vars = ["mood", "activity", "screen", "circumplex.arousal"],
-        save = True)
-    visualiser.timestamp_heatmap(save=True)
+    # Check which individuals have how many NAs for which variables
+    visualiser.na_heatmap(save=True)
+
+    # Check which individuals have how many NAs for which days
+    visualiser.na_heatmap(date=True, save=True)
+
+    # 15 individuals have NA values for the variables arousal and valence. No other NAs are present in the data. No NAs within timestamps of individuals either.
+
+
+
+
+
+    # visualiser.individual_outlier_plot(save=True)
+    # visualiser.timestamp_barcode(
+    #     vars = ["mood", "activity", "screen", "circumplex.arousal"],
+    #     save = True)
+    # visualiser.timestamp_heatmap(save=True)
 
     # visualiser.descriptives()
     # visualiser.datapoint_counts_per_id()

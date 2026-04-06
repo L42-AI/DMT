@@ -57,6 +57,50 @@ class Visualiser:
         else:
             plt.show()
 
+    def na_heatmap(self, date: bool = False, save: bool = False):
+        """Visualize the presence of NAs amongs individual/variable or individual/date combinations
+
+        Args:
+            date (bool, optional): Whether you want to visualize NAs in dates instead of variables. Defaults to False.
+            save (bool, optional): Whether you want to save instead of plot. Defaults to False.
+        """
+        dir = Path('results/eda')
+
+        col = 'date' if date else 'variable'
+        target_col = 'time' if date else 'value'
+
+        grouped = self.data.groupby(["id", col])[target_col]
+        counts = grouped.size()
+        na_counts = grouped.apply(lambda x: x.isna().sum())  
+        na_summary = ((na_counts / counts) * 100).unstack(fill_value=0).astype(float)
+        mask = na_summary == 0
+
+        # plot
+        ax = plt.gca()
+        ax.set_facecolor('#f0f0f0') # A neutral light grey for "Perfect Data"
+        plt.figure(figsize=(12, 12))
+        sns.heatmap(na_summary,
+                    mask=mask,
+                    annot=True,
+                    cmap="YlOrRd",
+                    fmt=".2f",
+                    cbar=True,
+                    linewidths=.5,
+                    linecolor="lightgrey",
+                    cbar_kws={'label': 'Percentage Missing (%)'})
+        plt.title("Percentage of Missing Values in Individuals")
+        plt.xlabel("Variable")
+        plt.ylabel("User")
+
+        if save:
+            dir.mkdir(parents=True, exist_ok=True)
+            filepath = dir / f"na_heatmap_{col}.png"
+            plt.savefig(filepath)
+            plt.close()
+        else:
+            plt.show()
+
+
     def datapoint_counts_per_id(self):
         """ Visualize the number of datapoints per id. """
         grouped = self.data.groupby('id').size()
