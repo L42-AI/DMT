@@ -7,10 +7,12 @@ import seaborn as sns
 from scipy import stats
 import matplotlib.pyplot as plt
 
+from consts import SRC_DIR
+
 def load_data(file_path: str | None = None) -> pd.DataFrame:
     """ Load the dataset from a CSV file. """
     if file_path is None:
-        file_path = Path("src/data/dataset_mood_smartphone.csv")
+        file_path = SRC_DIR / "data" / "dataset_mood_smartphone.csv"
     df = pd.read_csv(file_path, index_col=0)  # Assuming the first column is an index
     df['time'] = pd.to_datetime(df['time'])  # Ensure 'time' column is in datetime format
     return df
