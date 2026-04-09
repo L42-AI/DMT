@@ -7,6 +7,10 @@ import seaborn as sns
 from scipy import stats
 import matplotlib.pyplot as plt
 
+from imputegap.recovery.manager import TimeSeries
+from imputegap.recovery.contamination import GenGap
+from imputegap.tools import utils
+
 def load_data(file_path: str | None = None) -> pd.DataFrame:
     """ Load the dataset from a CSV file. """
     if file_path is None:
@@ -30,10 +34,64 @@ class Visualiser:
         """
         self.data = data
 
+    def _time_range(self):
+        min_datetime = self.data['time'].dt.date.min()
+        max_datetime = self.data['time'].dt.date.max()
+        range_datetime = pd.date_range(min_datetime, max_datetime)
+        
+        return range_datetime
+    
+    def na_distribution_variable(self, variables: List[str]):
+
+        if 'gap_duration' not in self.data.columns:
+            self.data['gap_duration'] = pd.Timedelta(0)
+
+        for var in variables:
+            # Select relevant variable data
+            subset = self.data[self.data['variable'] == var].sort_values(['id', 'time'])
+            
+            # Initialize duration column, with default to zero (for non-missing data)
+            subset['gap_duration'] = pd.Timedelta(0)
+
+            # Look at one individual
+            for _, person_data in subset.groupby('id'):
+                # Create mask
+                is_na = person_data['value'].isna()
+
+                # Group observations in such a way that consecutive nas are in same group. We then have groups of nas and groups of observations
+                group_id = (is_na != is_na.shift()).cumsum()
+
+                # Iterate through every group
+                for _, group in person_data.groupby(group_id):
+                    # identify na group
+                    if group['value'].isna().any():
+                        # find valid measurements before and after na occurence(s)
+                        prev_idx = group.index[0] - 1
+                        next_idx = group.index[-1] + 1
+                        
+                        if prev_idx in person_data.index and next_idx in person_data.index:
+                            # Compute na duration
+                            duration = person_data.loc[next_idx, 'time'] - person_data.loc[prev_idx, 'time']
+
+                            # Add duration to NA instances in subset
+                            subset.loc[group.index, 'gap_duration'] = duration
+
+            # Add duratiion to NA instances in original dataset, set durations for other variables 
+            self.data.update(subset[['gap_duration']])
+        
+        # Replace gap_duration NAs with 0 (meaning no NAs and hence no gap)
+        # self.data['gap_duration'] = self.data['gap_duration'].fillna(pd.Timedelta(0))
+
+        
+
     def descriptives(self):
         ''' Descriptive statistics for all variables of the dataset '''
         data_audit = self.data.groupby('variable')['value'].describe()
         print(data_audit, '\n')
+
+    def pairplot(self):
+        sns.pairplot(self.data)
+        plt.show()
 
     def individual_outlier_plot(self, save: bool = False):
         """Plot the central tendencies of individuals across all variables. To show whether indivual tendencies for certain
@@ -99,7 +157,6 @@ class Visualiser:
             plt.close()
         else:
             plt.show()
-
 
     def datapoint_counts_per_id(self):
         """ Visualize the number of datapoints per id. """
@@ -191,6 +248,7 @@ class Visualiser:
         dir = Path("results/eda/multi_barcode")
 
         grouped = self.data.groupby('variable')
+        total_presence = None
         for var, group in grouped:
 
             # reshape and aggregate variable data to desired format -> (id, date), with entries being binary indicators whether 
@@ -201,27 +259,32 @@ class Visualiser:
                 values = 'value',
                 aggfunc = 'count'
             ).fillna(0)
-            presence_bin = (presence > 0).astype(int)
-
-            # plot
-            plt.figure(figsize=(16, 8))
-            sns.heatmap(presence_bin,
-                        cmap="YlGnBu",
-                        cbar=False,
-                        linewidths=.5,
-                        linecolor="lightgrey")
-            plt.title(f"Multi-User Barcode for {var}")
-            plt.xlabel("Date")
-            plt.ylabel("User ID")
-            plt.tight_layout()
-
-            if save:
-                dir.mkdir(parents = True, exist_ok= True)
-                save_path = dir / f"multibar_{var}.png"
-                plt.savefig(save_path)
-                plt.close()
+            print(presence)
+            if total_presence is None:
+                total_presence = presence
             else:
-                plt.show()
+                total_presence *= presence
+        presence_bin = (total_presence > 0).astype(int)
+
+        # plot
+        plt.figure(figsize=(16, 8))
+        sns.heatmap(presence_bin,
+                    cmap="YlGnBu",
+                    cbar=False,
+                    linewidths=.5,
+                    linecolor="lightgrey")
+        plt.title(f"Multi-User Barcode for all variables")
+        plt.xlabel("Date")
+        plt.ylabel("User ID")
+        plt.tight_layout()
+
+        if save:
+            dir.mkdir(parents = True, exist_ok= True)
+            save_path = dir / "multibar_total.png"
+            plt.savefig(save_path)
+            plt.close()
+        else:
+            plt.show()
 
     def value_distribution_per_id(self):
         """ Visualize the distribution of values per id. """
@@ -360,7 +423,6 @@ class Analyser:
 
         # Current: aggregated data with duration aggregate NAs replaced with 0. 
         print(data_daily.head())
-
 
     def get_suggested_transformations(self):
         """
