@@ -11,20 +11,21 @@ def main():
     analyser = Analyser(df)
     
 
-    # # Print describives of each variable
-    # visualiser.descriptives()
 
-    # # builtin and entertainment have negative minimum values, set any values smaller than 0 to 0.
+    # builtin and entertainment have negative minimum values, set any values smaller than 0 to 0.
     analyser.cap_variables(vars = ['appCat.builtin', 'appCat.entertainment'], cap=0.0)
 
-    # # import edited data back into Visualiser, check descriptives again
-    visualiser.import_data(analyser.data)
-    visualiser.descriptives() # minimum values for these variables are now 0.
+    # Add Na durations for arousal and valence (might be useful later on)
+    analyser.na_distribution_variable(variables = ['circumplex.valence', 'circumplex.arousal'])
 
-    # To-Do: Explore and handle initial missing values in valence and arousal
-    visualiser._time_range()
-    visualiser.na_distribution_variable(variables = ['circumplex.valence', 'circumplex.arousal'])
-    print(visualiser.data[visualiser.data['gap_duration'] > pd.Timedelta(0)])
+    # Transform data to daily format for further EDA and cleaning
+    analyser.daily_format(save = True, show = True)
+
+    # === Daily Data Analysis ===
+    # Show correlations between all variables
+    visualiser.import_data(analyser)
+    visualiser.show_correlations()
+
 
 
 
