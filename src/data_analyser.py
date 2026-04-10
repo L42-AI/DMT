@@ -38,11 +38,7 @@ class Analyser:
         self.user_vars = USER_VARS
         self.sensor_vars = [var for var in self.data['variable'].unique() if var not in self.user_vars]
 
-    # === Helpers ===
-    def _error_no_daily(self):
-        if self.daily_data is None:
-            raise ValueError("Daily data is not defined")
-        
+    # === Helpers ===     
     def _total_time_range(self):
         """ Returns the total range of time observed in the whole dataset """
         min_datetime = self.data['time'].dt.date.min()
@@ -162,15 +158,18 @@ class Analyser:
 
     def impute(self):
         # NOTE: In progress, imputation for scored variables still missing
-        self._error_no_daily()
         if self.daily_data is None:
             raise ValueError("Daily data is not defined")
 
-        # zero-imputation
+        # sensor-data imputation
         for row in self.daily_data.index:
             
             if self.daily_data.loc[row, 'variable'] in self.sensor_vars and pd.isna(self.daily_data.loc[row, 'value']):
                 self.daily_data.loc[row, 'value'] = 0
+        
+        # scored-data imputation
+        # individual level
+        # for id, ind_data in self.daily_data.groupby():
 
     def get_suggested_transformations(self):
         """
@@ -335,10 +334,6 @@ class Visualiser:
         self.daily_data = None
 
     # === Helpers ===
-    def _error_no_daily(self):
-        if self.daily_data is None:
-            raise ValueError("Daily data is not defined")
-            
 
     # === Methods ===
     def import_data(self, analyser: Analyser):
