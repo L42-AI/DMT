@@ -13,6 +13,9 @@ from imputegap.tools import utils
 
 from IPython.display import display
 
+# Globals
+USER_VARS = ['circumplex.arousal', 'circumplex.valence', 'mood']
+
 def load_data(file_path: str | None = None) -> pd.DataFrame:
     """ Load the dataset from a CSV file. """
     if file_path is None:
@@ -29,10 +32,17 @@ class Analyser:
 
         # Create date column
         self.data['date'] = self.data['time'].dt.date
-
         self.daily_data = None
 
+        # Variable types
+        self.user_vars = USER_VARS
+        self.sensor_vars = [var for var in self.data['variable'].unique() if var not in self.user_vars]
+
     # === Helpers ===
+    def _error_no_daily(self):
+        if self.daily_data is None:
+            raise ValueError("Daily data is not defined")
+        
     def _total_time_range(self):
         """ Returns the total range of time observed in the whole dataset """
         min_datetime = self.data['time'].dt.date.min()
@@ -119,16 +129,9 @@ class Analyser:
             show (bool, optional): Whether to print a header (10 rows). Defaults to False.
         """
         
-        # create date column for each entry
-        self.data['date'] = self.data['time'].dt.date
-
-        # lists of variable names; aggregation for durations should be sum, and for scores should be mean
-        mean_vars = ['mood', 'circumplex.arousal', 'circumflex.valence']
-        sum_vars = [v for v in self.data['variable'].unique() if v not in mean_vars]
-
         # want a table of aggregate values for every combination of id, date, and variables
-        sum_mask = self.data['variable'].isin(sum_vars)
-        mean_mask = self.data['variable'].isin(mean_vars)
+        sum_mask = self.data['variable'].isin(self.sensor_vars)
+        mean_mask = self.data['variable'].isin(self.user_vars)
         daily_data_sum = self.data[sum_mask].groupby(['id', 'date', 'variable'])['value'].sum().unstack()
         daily_data_mean = self.data[mean_mask].groupby(['id', 'date', 'variable'])['value'].mean().unstack()
         daily_data = pd.concat([daily_data_mean, daily_data_sum], axis = 1)
@@ -138,8 +141,15 @@ class Analyser:
         multi_index = pd.MultiIndex.from_product([unique_ids, self._total_time_range()], names=['id', 'date'])
 
         # Reindex the data
-        daily_data = daily_data.reindex(multi_index
-                                        )
+        daily_data = daily_data.reindex(multi_index).reset_index()
+
+        daily_data = daily_data.melt(
+            id_vars = ['id', 'date'],
+            var_name = 'variable',
+            value_name = 'value' 
+        )
+
+
         if save:
             dir = Path('results/data')
             dir.mkdir(exist_ok=True, parents=True)
@@ -149,6 +159,18 @@ class Analyser:
             print(daily_data.head(10))
         
         self.daily_data = daily_data
+
+    def impute(self):
+        # NOTE: In progress, imputation for scored variables still missing
+        self._error_no_daily()
+        if self.daily_data is None:
+            raise ValueError("Daily data is not defined")
+
+        # zero-imputation
+        for row in self.daily_data.index:
+            
+            if self.daily_data.loc[row, 'variable'] in self.sensor_vars and pd.isna(self.daily_data.loc[row, 'value']):
+                self.daily_data.loc[row, 'value'] = 0
 
     def get_suggested_transformations(self):
         """
@@ -312,6 +334,13 @@ class Visualiser:
         self.data['date'] = self.data['time'].dt.date
         self.daily_data = None
 
+    # === Helpers ===
+    def _error_no_daily(self):
+        if self.daily_data is None:
+            raise ValueError("Daily data is not defined")
+            
+
+    # === Methods ===
     def import_data(self, analyser: Analyser):
         """Import new data to Visualizer, f.e. after using Analyser class to edit data.
 
@@ -604,10 +633,31 @@ class Visualiser:
             plt.show()
 
     # --- Visualisation of daily data ---
-    def show_correlations(self):
-        corr_matrix = self.daily_data.corr()
-        sns.heatmap(corr_matrix)
-        plt.title("Correlation Matrix of all Variables in Daily Data")
-        plt.show()
+    def show_correlations(self, save: bool = False):
 
+        self._error_no_daily()
+        dir = Path("results/eda/correlation_matrices")
+        dir.mkdir(exist_ok=True, parents=True)
+
+        ind_data = self.daily_data.groupby('id')
+
+        for id, ind in ind_data:
+            corr_matrix = _wide_format_daily(data = ind).corr()
+            plt.figure(figsize=(12, 5))
+            sns.heatmap(
+                corr_matrix,
+                vmin=-1,
+                vmax=1,
+                cmap='RdBu')
+            plt.title(f"Correlation Matrix of all Variables in Daily Data for {id}")
+            if save:    
+                plt.savefig(dir / f"{id}.png")
+                plt.close()
+            else: 
+                plt.show()
+
+
+# === Functions ===
+def _wide_format_daily(data: pd.DataFrame):
+    return data.pivot(index = ['id', 'date'], columns = 'variable', values= 'value')
 
