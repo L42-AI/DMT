@@ -35,8 +35,8 @@ class Analyser:
         self.daily_data = None
 
         # Variable types
-        self.user_vars = USER_VARS
-        self.sensor_vars = [var for var in self.data['variable'].unique() if var not in self.user_vars]
+        self.scored_vars = USER_VARS
+        self.sensor_vars = [var for var in self.data['variable'].unique() if var not in self.scored_vars]
 
     # === Helpers ===     
     def _total_time_range(self):
@@ -127,7 +127,7 @@ class Analyser:
         
         # want a table of aggregate values for every combination of id, date, and variables
         sum_mask = self.data['variable'].isin(self.sensor_vars)
-        mean_mask = self.data['variable'].isin(self.user_vars)
+        mean_mask = self.data['variable'].isin(self.scored_vars)
         daily_data_sum = self.data[sum_mask].groupby(['id', 'date', 'variable'])['value'].sum().unstack()
         daily_data_mean = self.data[mean_mask].groupby(['id', 'date', 'variable'])['value'].mean().unstack()
         daily_data = pd.concat([daily_data_mean, daily_data_sum], axis = 1)
@@ -168,8 +168,13 @@ class Analyser:
                 self.daily_data.loc[row, 'value'] = 0
         
         # scored-data imputation
-        # individual level
-        # for id, ind_data in self.daily_data.groupby():
+        # individual and variable level
+        for (id, var), data in self.daily_data.groupby(['id', 'variable']):
+            if var in self.scored_vars:
+                print(f"{id}, {var}")
+                mask_na = data['value'].isna()
+                print(mask_na)
+
 
     def get_suggested_transformations(self):
         """
@@ -630,7 +635,6 @@ class Visualiser:
     # --- Visualisation of daily data ---
     def show_correlations(self, save: bool = False):
 
-        self._error_no_daily()
         dir = Path("results/eda/correlation_matrices")
         dir.mkdir(exist_ok=True, parents=True)
 
