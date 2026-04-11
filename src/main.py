@@ -1,4 +1,5 @@
-from data_analyser import Visualiser, Analyser
+from visualiser import Visualiser
+from analyser import Analyser
 import data as _data
 
 def main():
@@ -16,13 +17,15 @@ def main():
     analyser.na_distribution_variable(variables = ['circumplex.valence', 'circumplex.arousal'])
 
     # Transform data to daily format for further EDA and cleaning
-    analyser.daily_format(save = True)
+    analyser.daily_format(show = True)
 
     # === Daily Data Analysis ===
 
     # Show correlations between all variables
     visualiser.import_data(analyser)
     visualiser.show_correlations(save=True)
+    visualiser.na_heatmap(save=True)
+
     """
     Within-individual correlations are substantial, depending on the individual. This means that the imputation method should be cross-sectional as well as longitudinal.
     It also suggests that our model should probably be on an individual level and not on a group level...
