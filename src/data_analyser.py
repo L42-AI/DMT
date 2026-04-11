@@ -7,7 +7,13 @@ import seaborn as sns
 from scipy import stats
 import matplotlib.pyplot as plt
 
-from consts import SRC_DIR
+from consts import SRC_DIR, appcat_variables
+
+import numpy as np
+import pandas as pd
+from sklearn.cluster import DBSCAN
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
 
 def load_data(file_path: str | None = None) -> pd.DataFrame:
     """ Load the dataset from a CSV file. """
@@ -15,11 +21,16 @@ def load_data(file_path: str | None = None) -> pd.DataFrame:
         file_path = SRC_DIR / "data" / "dataset_mood_smartphone.csv"
     df = pd.read_csv(file_path, index_col=0)  # Assuming the first column is an index
     df['time'] = pd.to_datetime(df['time'])  # Ensure 'time' column is in datetime format
+
+    for var in appcat_variables + ['screen']:
+        df.loc[df['variable'] == var, 'duration'] = pd.to_timedelta(df.loc[df['variable'] == var, 'value'], unit='s')
+        df.loc[df['variable'] == var, 'end_time'] = df.loc[df['variable'] == var, 'time'] + df.loc[df['variable'] == var, 'duration']
+
     return df
 
 class Visualiser:
     def __init__(self, data: pd.DataFrame):
-        self.data = data
+        self.import_data(data)
 
         # Create date column
         self.data['date'] = self.data['time'].dt.date
@@ -283,14 +294,16 @@ class Visualiser:
             fig, ax = plt.subplots(figsize=(10, 6))
             
             # Use Seaborn's kdeplot to create overlapping density lines
-            sns.kdeplot(
+            sns.histplot(
                 data=clean_data,
                 x='value',
-                hue='id',           # Creates a separate line for each ID
+                hue='id',
+                element='step',
+                stat='density',
+                common_norm=False,
+                palette='tab10',
+                alpha=0.5,
                 ax=ax,
-                palette='Set2',     # A visually pleasing, distinct color palette
-                linewidth=2,        # Make the lines slightly thicker for visibility
-                common_norm=False   # Scales each ID's curve independently so they are comparable
             )
             
             ax.set_title(f'Value Distribution for Variable: {var_val}', fontsize=14, fontweight='bold')
@@ -304,11 +317,114 @@ class Visualiser:
             sns.despine()
             
             plt.tight_layout()
-            plt.show()
+            plt.savefig(f'results/eda/value_distribution_{var_val}.png')
+            plt.gca().clear()  # Clear the current figure to free memory for the next plot
+            # plt.show()
 
 class Analyser:
     def __init__(self, data: pd.DataFrame):
         self.data = data
+
+    def handle_impossible_outliers(self):
+        """
+        Handle impossible outliers, f.e. negative values for variables that should not have negative values.
+        Rules:
+        - mood is 1-10
+        - arousal and valence are -2 to 2
+        - activity is 0-1
+        - call made is 1
+        - sms sent is 1
+        - screen is time
+        - all AppCat variables are time variables
+
+        - All time variables follow time variable rules, f.e. no negative values        
+        """
+
+        print("Handling impossible outliers based on variable-specific rules...")
+        print("Initial outlier counts:")
+        print(self.data['value'].isna().sum())
+        for var in self.data['variable'].unique():
+            if var == 'mood':
+                self.data.loc[(self.data['variable'] == var) & ((self.data['value'] < 1) | (self.data['value'] > 10)), 'value'] = np.nan
+            elif var in ['circumplex.arousal', 'circumplex.valence']:
+                self.data.loc[(self.data['variable'] == var) & ((self.data['value'] < -2) | (self.data['value'] > 2)), 'value'] = np.nan
+            elif var == 'activity':
+                self.data.loc[(self.data['variable'] == var) & ((self.data['value'] < 0) | (self.data['value'] > 1)), 'value'] = np.nan
+            elif var == 'call':
+                self.data.loc[(self.data['variable'] == var) & (self.data['value'] != 1), 'value'] = np.nan
+            elif var == 'sms':
+                self.data.loc[(self.data['variable'] == var) & (self.data['value'] != 1), 'value'] = np.nan
+            elif var == 'screen' or var in appcat_variables:
+                self.data.loc[(self.data['variable'] == var) & (self.data['value'] < 0), 'value'] = np.nan
+        
+        print("Outlier counts after handling impossible outliers:")
+        print(self.data['value'].isna().sum())
+
+    def handle_unlikely_outliers(self, eps=1.5, min_samples=4):
+        """ 
+        Handle unlikely outliers by checking specific values for each variable, per individual.
+        Uses 1D DBSCAN to find isolated datapoints that do not fit a user's normal clusters.
+        
+        Args:
+            eps (float): The maximum distance (in standard deviations) between two values 
+                         to be clustered together.
+            min_samples (int): The minimum number of datapoints required to form a "normal" cluster.
+        """
+        print("\nHandling unlikely individual datapoints using 1D DBSCAN...")
+        original_nans = self.data['value'].isna().sum()
+        
+        # Keep track of the original dataframe indices that get flagged as outliers
+        outlier_indices = []
+
+        # Group by both ID and Variable, ignoring already missing values
+        grouped = self.data.dropna(subset=['value']).groupby(['id', 'variable'])
+        
+        for (id_val, var_val), group in grouped:
+            # DBSCAN cannot cluster data if there are fewer points than the min_samples required
+            if len(group) < min_samples:
+                continue
+                
+            # Extract the raw values and reshape to a 2D column vector for scikit-learn
+            values = group['value'].values.reshape(-1, 1)
+            
+            # Standardize the data so a universal 'eps' works for all variables
+            # Skip if there is no variance (e.g., user logged '6' for mood 20 times)
+            if np.std(values) == 0:
+                continue
+                
+            scaler = StandardScaler()
+            scaled_values = scaler.fit_transform(values)
+            
+            # Run DBSCAN on this specific user's specific variable
+            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+            labels = dbscan.fit_predict(scaled_values)
+            
+            # DBSCAN assigns a label of '-1' to any point it considers isolated noise
+            noise_mask = (labels == -1)
+            
+            # Map the noise back to the original dataframe index
+            group_outlier_indices = group.index[noise_mask].tolist()
+            outlier_indices.extend(group_outlier_indices)
+
+        # Nullify the identified outlier datapoints
+        if outlier_indices:
+            outlier_indices = list(set(outlier_indices))
+            outlier_indices.sort()  # Remove duplicates if any
+            self.data.loc[outlier_indices, 'value'] = np.nan
+            
+        new_nans = self.data['value'].isna().sum()
+        print(f"DBSCAN flagged and nullified {new_nans - original_nans} unlikely datapoints.")
+
+    def process_outliers(self):
+        """
+        High-level method to deal with outliers. For this there are two groups:
+        1. data points that are impossible 
+        2. data points that are possible but highly unlikely (f.e. an individual with very extreme tendencies across many variables)
+        """
+
+        self.handle_impossible_outliers()
+
+        self.handle_unlikely_outliers()
 
     def cap_variables(self, vars: List[str], cap: float, min: bool = True):
         """ Caps minimum and maximum values of variables. F.e. some variables should not have negative values, or some variables have outliers
