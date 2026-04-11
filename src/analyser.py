@@ -211,24 +211,19 @@ class Analyser:
         
         self.daily_data = daily_data
 
-    def impute(self):
+    def impute(self, listwise_deletion: bool = True):
         # NOTE: In progress, imputation for scored variables still missing
         if self.daily_data is None:
             raise ValueError("Daily data is not defined")
 
         # sensor-data imputation
-        for row in self.daily_data.index:
-            
-            if self.daily_data.loc[row, 'variable'] in self.sensor_vars and pd.isna(self.daily_data.loc[row, 'value']):
-                self.daily_data.loc[row, 'value'] = 0
-        
-        # scored-data imputation
-        # individual and variable level
-        for (id, var), data in self.daily_data.groupby(['id', 'variable']):
-            if var in self.scored_vars:
-                print(f"{id}, {var}")
-                mask_na = data['value'].isna()
-                print(mask_na)
+        sensor_mask = (self.daily_data['variable'].isin(self.sensor_vars)) & (self.daily_data['value'].isna())
+        self.daily_data.loc[sensor_mask, 'value'] = 0
+
+        # remove na-rows in scored variable data
+        if listwise_deletion:
+            scored_na_mask = (self.daily_data['variable'].isin(self.scored_vars)) & (self.daily_data['value'].isna())
+            self.daily_data = self.daily_data[~scored_na_mask].reset_index(drop=True)
 
 
     def get_suggested_transformations(self):
