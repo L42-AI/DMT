@@ -1,16 +1,13 @@
-from pathlib import Path
-import pandas as pd
-
-from data_analyser import load_data, Visualiser, Analyser
-
+from data_analyser import Visualiser, Analyser
+import data as _data
 
 def main():
     # Load the data
-    df = load_data()  # Pass None to use
+    df = _data.load()
     visualiser = Visualiser(df)
     analyser = Analyser(df)
     
-
+    analyser.process_outliers()
 
     # builtin and entertainment have negative minimum values, cap to zero.
     analyser.cap_variables(vars = ['appCat.builtin', 'appCat.entertainment'], cap=0.0)
