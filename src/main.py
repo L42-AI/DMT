@@ -4,6 +4,8 @@ from visualiser import Visualiser
 from analyser import Analyser
 import data as _data
 
+from features import extract_behavioural_features, extract_time_features
+
 def main():
     # Load the data
     df = _data.load()
@@ -19,6 +21,14 @@ def main():
 
     # Transform data to daily format for further EDA and cleaning
     analyser.aggregate_daily(show = True)
+
+
+    print(analyser.data.head())
+    analyser.data = extract_time_features(analyser.data)
+    analyser.data = extract_behavioural_features(analyser.data)
+    analyser.data.to_csv('data/feature_engineered_data.csv', index=False)
+
+    sys.exit(0)
 
     # === Daily Data Analysis ===
 
