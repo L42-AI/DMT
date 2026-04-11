@@ -206,8 +206,7 @@ class Analyser:
     def daily_format(self, save: bool = False, show: bool = False):
         # In progress
         """ Aggregate all data into daily format. Aggregation method is mean for user-entered scores, and sum for 
-        all other variables. Rows are instances, here defined as combination of (id, date). Columns are variables/
-        attributes.
+        all other variables. Saves the data into attribute self.daily_data as the same long format as original data.
 
         Args:
             save (bool, optional): Whether to save as csv. Defaults to False.
