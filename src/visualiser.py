@@ -14,27 +14,18 @@ if TYPE_CHECKING:
 
 class Visualiser:
     def __init__(self, data: pd.DataFrame):
+        self.load(data)
+
+    def load(self, data: pd.DataFrame, daily_data: pd.DataFrame = None):
         self.data = data
-
-        # Create date column
-        self.data['date'] = self.data['time'].dt.date
-        self.daily_data = None
-
-    # === Methods ===
-    def import_data(self, analyser: Analyser):
-        """Import new data to Visualizer, f.e. after using Analyser class to edit data.
-
-        Args:
-            data (pd.DataFrame): The data to import. 
-        """
-        self.data = analyser.data
-        self.daily_data = analyser.daily_data
+        self.daily_data = daily_data
+        if 'date' not in self.data.columns:
+            self.data['date'] = self.data['time'].dt.date
 
     def descriptives(self):
         ''' Descriptive statistics for all variables of the dataset '''
         data_audit = self.data.groupby('variable')['value'].describe()
         print(data_audit, '\n')
-
 
     def individual_outlier_plot(self, save: bool = False):
         """Plot the central tendencies of individuals across all variables. To show whether indivual tendencies for certain
@@ -58,7 +49,7 @@ class Visualiser:
         else:
             plt.show()
 
-    def na_heatmap(self, date: bool = False, save: bool = False):
+    def heatmap_missing_values_per_id(self, date: bool = False, save: bool = False):
         """Visualize the presence of NAs amongs individual/variable or individual/date combinations
 
         Args:
@@ -101,13 +92,17 @@ class Visualiser:
         else:
             plt.show()
 
-    def show_na_distribution(self):
+    def show_na_distribution(self, save: bool = False):
         """ Show the distribution of NA durations for the original data. In hours """
         duration_in_hours = self.data.loc[self.data['gap_duration'] > pd.Timedelta(0),'gap_duration'].dt.total_seconds() / 3600
         plt.hist(duration_in_hours)
-        plt.show()
+        if save:
+            plt.savefig("results/eda/na_distribution.png")
+            plt.close()
+        else:
+            plt.show()
 
-    def datapoint_counts_per_id(self):
+    def datapoint_counts_per_id(self, save: bool = False):
         """ Visualize the number of datapoints per id. """
         grouped = self.data.groupby('id').size()
         sorted_idx = grouped.sort_values().index
@@ -118,9 +113,13 @@ class Visualiser:
         plt.ylabel('Number of Datapoints')
         plt.title('Number of Datapoints per ID')
         plt.xticks(rotation=90, fontsize=10)  # Rotate x-axis labels for better readability
-        plt.show()
+        if save:
+            plt.savefig("results/eda/datapoint_counts.png")
+            plt.close()
+        else:
+            plt.show()
 
-    def timestamp_distribution_per_id(self):
+    def ts_dist_per_id(self, save: bool = False):
         """ Visualize the distribution of timestamps per id. """
         self.data['time'] = pd.to_datetime(self.data['time'])
         grouped = self.data.groupby('id')
@@ -133,9 +132,13 @@ class Visualiser:
             plt.xticks(rotation=45)
             plt.grid(True, linestyle='--', alpha=0.7)
             plt.tight_layout()
-            plt.show()
+            if save:
+                plt.savefig(f"results/eda/timestamp_distribution_{id_val}.png")
+                plt.close()
+            else:
+                plt.show()
 
-    def timestamp_distribution_per_var(self):
+    def ts_dist_per_var(self, save: bool = False):
         """ Visualize the distribution of timestamps per variable. """
         self.data['time'] = pd.to_datetime(self.data['time'])
         grouped = self.data.groupby('variable')
@@ -148,7 +151,11 @@ class Visualiser:
             plt.xticks(rotation=45)
             plt.grid(True, linestyle='--', alpha=0.7)
             plt.tight_layout()
-            plt.show()
+            if save:
+                plt.savefig(f"results/eda/timestamp_distribution_{var_val}.png")
+                plt.close()
+            else:
+                plt.show()
 
     def timestamp_barcode(self, vars: List[str], save: bool = False):
         """Barcode plots to visualize the times of the variable occurences in the data for every individual
@@ -231,39 +238,7 @@ class Visualiser:
             else:
                 plt.show()
 
-    def value_distribution_per_id(self):
-        """ Visualize the distribution of values per id. """
-        grouped = self.data.groupby('id')
-        for id_val, group in grouped:
-            plt.figure(figsize=(10, 4))
-            plt.hist(group['value'], bins=50, color='green', alpha=0.7)
-            plt.xlabel('value')
-            plt.ylabel('Frequency')
-            plt.title(f'Distribution of values for ID {id_val}')
-            plt.grid(True, linestyle='--', alpha=0.7)
-            plt.tight_layout()
-            plt.show()
-    
-    def value_distribution_per_variable(self, type = "hist"):
-        """ Visualize the distribution of values per variable"""
-        grouped = self.data.groupby('variable')
-
-        if type == "box":
-            # Boxplots option might be better, especially for outlier visualization
-            pass
-
-        if type == "hist":
-            for id_var, group in grouped:
-                plt.figure(figsize=(10, 4))
-                plt.hist(group['value'], bins=50, color='green', alpha=0.7)
-                plt.xlabel('value')
-                plt.ylabel('Frequency')
-                plt.title(f"Distribution of values for variable {id_var}")
-                plt.grid(True, linestyle='--', alpha=0.7)
-                plt.tight_layout()
-                plt.show()
-
-    def variable_distribution_per_id(self):
+    def var_dist_per_id(self, save: bool = False):
         """ Visualize the distribution of a specified variable per id. """
         grouped = self.data.groupby('id')
         for id_val, group in grouped:
@@ -274,9 +249,13 @@ class Visualiser:
             plt.title(f'Distribution of variable for ID {id_val}')
             plt.grid(True, linestyle='--', alpha=0.7)
             plt.tight_layout()
-            plt.show()
+            if save:
+                plt.savefig(f"results/eda/variable_distribution_{id_val}.png")
+                plt.close()
+            else:
+                plt.show()
 
-    def visualize_value_distribution_per_variable(self):
+    def val_dist_per_var(self, save: bool = False):
         """ Visualize the distribution of values per variable, showing all IDs as overlapping lines. """
         # Group the data by variable first
         grouped_by_var = self.data.groupby('variable')
@@ -312,12 +291,14 @@ class Visualiser:
             sns.despine()
             
             plt.tight_layout()
-            plt.savefig(f'results/eda/value_distribution_{var_val}.png')
-            plt.gca().clear()  # Clear the current figure to free memory for the next plot
-            # plt.show()
+            if save:
+                plt.savefig(f'results/eda/value_distribution_{var_val}.png')
+                plt.close()
+            else:
+                plt.show()
     
     # --- Visualisation of daily data ---
-    def show_correlations(self, save: bool = False):
+    def var_correlations_per_id(self, save: bool = False):
 
         dir = Path("results/eda/correlation_matrices")
         dir.mkdir(exist_ok=True, parents=True)

@@ -10,6 +10,8 @@ from sklearn.preprocessing import StandardScaler
 
 from consts import APPCAT_VARS, USER_VARS
 
+import helpers as _helpers
+
 class Analyser:
     # === Constructor ===
     def __init__(self, data: pd.DataFrame):
@@ -58,60 +60,34 @@ class Analyser:
         print("Outlier counts after handling impossible outliers:")
         print(self.data['value'].isna().sum())
 
-    def _handle_unlikely_outliers(self, eps=1.5, min_samples=4):
-        """ 
-        Handle unlikely outliers by checking specific values for each variable, per individual.
-        Uses 1D DBSCAN to find isolated datapoints that do not fit a user's normal clusters.
-        
-        Args:
-            eps (float): The maximum distance (in standard deviations) between two values 
-                         to be clustered together.
-            min_samples (int): The minimum number of datapoints required to form a "normal" cluster.
+    def _handle_unlikely_outliers(self):
         """
-        print("\nHandling unlikely individual datapoints using 1D DBSCAN...")
-        original_nans = self.data['value'].isna().sum()
-        
-        # Keep track of the original dataframe indices that get flagged as outliers
-        outlier_indices = []
+        For each variable per ID, compute the mean and standard deviation
 
-        # Group by both ID and Variable, ignoring already missing values
-        grouped = self.data.dropna(subset=['value']).groupby(['id', 'variable'])
+        Then order the z-scores of the values
         
-        for (id_val, var_val), group in grouped:
-            # DBSCAN cannot cluster data if there are fewer points than the min_samples required
-            if len(group) < min_samples:
-                continue
-                
-            # Extract the raw values and reshape to a 2D column vector for scikit-learn
-            values = group['value'].values.reshape(-1, 1)
-            
-            # Standardize the data so a universal 'eps' works for all variables
-            # Skip if there is no variance (e.g., user logged '6' for mood 20 times)
-            if np.std(values) == 0:
-                continue
-                
-            scaler = StandardScaler()
-            scaled_values = scaler.fit_transform(values)
-            
-            # Run DBSCAN on this specific user's specific variable
-            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
-            labels = dbscan.fit_predict(scaled_values)
-            
-            # DBSCAN assigns a label of '-1' to any point it considers isolated noise
-            noise_mask = (labels == -1)
-            
-            # Map the noise back to the original dataframe index
-            group_outlier_indices = group.index[noise_mask].tolist()
-            outlier_indices.extend(group_outlier_indices)
+        Calculate the distance between consecutive z-scores
 
-        # Nullify the identified outlier datapoints
-        if outlier_indices:
-            outlier_indices = list(set(outlier_indices))
-            outlier_indices.sort()  # Remove duplicates if any
-            self.data.loc[outlier_indices, 'value'] = np.nan
-            
-        new_nans = self.data['value'].isna().sum()
-        print(f"DBSCAN flagged and nullified {new_nans - original_nans} unlikely datapoints.")
+        If gap is a statistical outlier (f.e. 3 IQRs above the third quartile), set value to NA. This means that we are looking for extreme outliers in the distribution of values per variable per ID, which is a sign of highly unlikely values.
+
+        """
+
+        print(self.data['value'].isna().sum())
+
+        for var in self.data['variable'].unique():
+            for id_val, group in self.data[self.data['variable'] == var].groupby('id'):
+                values = group['value']
+                z_scores = (values - values.mean()) / values.std()
+                sorted_z = z_scores.sort_values()
+                gaps = sorted_z.diff().abs()
+                q1 = gaps.quantile(0.25)
+                q3 = gaps.quantile(0.75)
+                iqr = q3 - q1
+                threshold = q3 + 3 * iqr
+                outlier_indices = gaps[gaps > threshold].index
+                self.data.loc[outlier_indices, 'value'] = np.nan
+
+        print(self.data['value'].isna().sum())
 
     def process_outliers(self):
         """
@@ -122,19 +98,12 @@ class Analyser:
 
         self._handle_impossible_outliers()
 
-        # self._handle_unlikely_outliers()
+        self._handle_unlikely_outliers()
 
-    # === Helpers ===     
-    def _total_time_range(self):
-        """ Returns the total range of time observed in the whole dataset """
-        min_datetime = self.data['time'].dt.date.min()
-        max_datetime = self.data['time'].dt.date.max()
-        range_datetime = pd.date_range(min_datetime, max_datetime)
-        return range_datetime
-    
     # === Methods ===
-    def na_distribution_variable(self, variables: List[str]):
-        """For given variables, compute duration of missing values. For consecutive NAs, the duration of missingness will be added. Observations without
+    def compute_gap_duration_for_variables(self, variables: List[str]):
+        """
+        For given variables, compute duration of missing values. For consecutive NAs, the duration of missingness will be added. Observations without
         NAs have a duration of 0s by default.
 
         Args:
@@ -200,7 +169,7 @@ class Analyser:
         print(design_mat.head())
 
 
-    def daily_format(self, save: bool = False, show: bool = False):
+    def aggregate_daily(self, save: bool = False, show: bool = False):
         # In progress
         """ Aggregate all data into daily format. Aggregation method is mean for user-entered scores, and sum for 
         all other variables. Rows are instances, here defined as combination of (id, date). Columns are variables/
@@ -220,7 +189,7 @@ class Analyser:
         
         # Create multi-index of ids and full range of dates 
         unique_ids = self.data['id'].unique()
-        multi_index = pd.MultiIndex.from_product([unique_ids, self._total_time_range()], names=['id', 'date'])
+        multi_index = pd.MultiIndex.from_product([unique_ids, _helpers.total_time_range(self.data['time'])], names=['id', 'date'])
 
         # Reindex the data
         daily_data = daily_data.reindex(multi_index).reset_index()

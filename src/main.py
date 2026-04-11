@@ -1,3 +1,5 @@
+import sys
+
 from visualiser import Visualiser
 from analyser import Analyser
 import data as _data
@@ -13,19 +15,25 @@ def main():
     # builtin and entertainment have negative minimum values, cap to zero.
     analyser.cap_variables(vars = ['appCat.builtin', 'appCat.entertainment'], cap=0.0)
 
-    # Add Na durations for arousal and valence (might be useful later on)
-    analyser.na_distribution_variable(variables = ['circumplex.valence', 'circumplex.arousal'])
+    analyser.compute_gap_duration_for_variables(variables = ['circumplex.valence', 'circumplex.arousal'])
 
     # Transform data to daily format for further EDA and cleaning
-    analyser.daily_format(show = True)
+    analyser.aggregate_daily(show = True)
 
     # === Daily Data Analysis ===
 
     # Show correlations between all variables
-    visualiser.import_data(analyser)
-    visualiser.show_correlations(save=True)
-    visualiser.na_heatmap(save=True)
+    visualiser.load(analyser.data, analyser.daily_data)
 
+    visualiser.individual_outlier_plot(save=True)
+    visualiser.var_correlations_per_id(save=True)
+    visualiser.heatmap_missing_values_per_id(save=True)
+    visualiser.val_dist_per_var(save=True)
+    visualiser.var_dist_per_id(save=True)
+    visualiser.ts_dist_per_id(save=True)
+    visualiser.ts_dist_per_var(save=True)
+
+    
     """
     Within-individual correlations are substantial, depending on the individual. This means that the imputation method should be cross-sectional as well as longitudinal.
     It also suggests that our model should probably be on an individual level and not on a group level...
