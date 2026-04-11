@@ -51,7 +51,7 @@ def main():
     analyser.impute()
 
     # Correlations between variables after imputation
-    visualiser.show_correlations(save=True)
+    visualiser.var_correlations_per_id(save=True)
 
 
 
