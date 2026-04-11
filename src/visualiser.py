@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import List
 
 import pandas as pd
 import seaborn as sns
@@ -8,9 +8,6 @@ import matplotlib.pyplot as plt
 from consts import SRC_DIR
 
 import helpers as _helpers
-
-if TYPE_CHECKING:
-    from analyser import Analyser
 
 class Visualiser:
     def __init__(self, data: pd.DataFrame):
