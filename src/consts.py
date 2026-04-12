@@ -22,3 +22,9 @@ USER_VARS = [
     'circumplex.valence',
     'mood'
 ]
+
+SENSOR_VARS = APPCAT_VARS + ['screen', 'activity']
+
+EVENT_VARS = ['call', 'sms']
+
+ALL_VARS = SENSOR_VARS + USER_VARS + EVENT_VARS
