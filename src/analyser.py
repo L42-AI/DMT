@@ -100,7 +100,7 @@ class Analyser:
 
         self._handle_unlikely_outliers()
 
-    def aggregate(self, interval: int, unit: str):
+    def aggregate(self, interval: int, unit: str, inplace: bool = False) -> pd.DataFrame:
         """
         Aggregates all sensor data into specified time intervals.
 
@@ -121,8 +121,18 @@ class Analyser:
         agg_data['value'] = agg_data['value'].where(agg_data['value'] <= 900, 900)
         agg_data['value'] = agg_data['value'].round(3)
 
-        agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
-        return agg_data
+        agg_data.sort_values(['variable', 'id', 'time'])
+
+        if inplace:
+            self.data = pd.concat(
+                [
+                    self.data[~self.data['variable'].isin(APPCAT_VARS + ['screen'])],
+                    agg_data
+                ]
+            ).reset_index(drop=True).sort_values(['variable', 'id', 'time'])
+            return self.data
+        
+        return agg_data.sort_values(['variable', 'id', 'time'])
 
     # === Methods ===
     def compute_gap_duration_for_variables(self, variables: List[str]):
