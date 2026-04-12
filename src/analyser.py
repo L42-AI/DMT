@@ -128,8 +128,8 @@ class Analyser:
         agg_data = self.data[self.data['variable'].isin(APPCAT_VARS + ['screen'])].copy()
         agg_data['time'] = pd.to_datetime(agg_data['time'])
         agg_data.set_index('time', inplace=True)
-        agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit}')['value'].sum().reset_index() 
-        agg_data['value'] = agg_data['value'].where(agg_data['value'] > seconds, seconds)
+        agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].sum().reset_index() 
+        agg_data['value'] = agg_data['value'].where(agg_data['value'] <= seconds, seconds)
         agg_data['value'] = agg_data['value'].round(3)
 
         agg_data.sort_values(['variable', 'id', 'time'])
