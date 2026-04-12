@@ -109,8 +109,19 @@ class Analyser:
             unit (str): The unit of time for the interval ('M' for minutes, 'H' for hours, 'D' for days).
         """
 
+        def convert_to_seconds(value: float, unit: str) -> int:
+            multipier_map = {
+                'M': 60,
+                'H': 3600,
+                'D': 86400
+            }
+
+            return int(value * multipier_map[unit])
+
         assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
         assert unit in ['M', 'H', 'D'], "Unit must be one of 'M', 'H', or 'D'"
+
+        seconds = convert_to_seconds(interval, unit)
 
         if unit == 'M': unit = 'min'
 
@@ -118,7 +129,7 @@ class Analyser:
         agg_data['time'] = pd.to_datetime(agg_data['time'])
         agg_data.set_index('time', inplace=True)
         agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit}')['value'].sum().reset_index() 
-        agg_data['value'] = agg_data['value'].where(agg_data['value'] <= 900, 900)
+        agg_data['value'] = agg_data['value'].where(agg_data['value'] > seconds, seconds)
         agg_data['value'] = agg_data['value'].round(3)
 
         agg_data.sort_values(['variable', 'id', 'time'])
