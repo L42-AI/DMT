@@ -100,6 +100,30 @@ class Analyser:
 
         self._handle_unlikely_outliers()
 
+    def aggregate(self, interval: int, unit: str):
+        """
+        Aggregates all sensor data into specified time intervals.
+
+        Args:
+            interval (int): The length of the interval (e.g., 1, 5, 10, 15, 30, 60).
+            unit (str): The unit of time for the interval ('M' for minutes, 'H' for hours, 'D' for days).
+        """
+
+        assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
+        assert unit in ['M', 'H', 'D'], "Unit must be one of 'M', 'H', or 'D'"
+
+        if unit == 'M': unit = 'min'
+
+        agg_data = self.data[self.data['variable'].isin(APPCAT_VARS + ['screen'])].copy()
+        agg_data['time'] = pd.to_datetime(agg_data['time'])
+        agg_data.set_index('time', inplace=True)
+        agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit}')['value'].sum().reset_index() 
+        agg_data['value'] = agg_data['value'].where(agg_data['value'] <= 900, 900)
+        agg_data['value'] = agg_data['value'].round(3)
+
+        agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
+        return agg_data
+
     # === Methods ===
     def compute_gap_duration_for_variables(self, variables: List[str]):
         """
