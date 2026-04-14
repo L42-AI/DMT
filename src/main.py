@@ -8,25 +8,15 @@ from features import extract_behavioural_features, extract_time_features
 
 def main():
     # Load the data
-    df = _data.load()
-    visualiser = Visualiser(df)
-    analyser = Analyser(df)
+    data = _data.load()
+    visualiser = Visualiser(data)
+    analyser = Analyser(data)
     
     analyser.process_outliers()
+    analyser.aggregate.time_data(interval=1, unit='H', inplace=True)
+    analyser.aggregate.targets(inplace=True)
 
-    # builtin and entertainment have negative minimum values, cap to zero.
-    analyser.cap_variables(vars = ['appCat.builtin', 'appCat.entertainment'], cap=0.0)
-
-    analyser.compute_gap_duration_for_variables(variables = ['circumplex.valence', 'circumplex.arousal'])
-
-    # Transform data to daily format for further EDA and cleaning
-    analyser.aggregate_daily(show = True)
-
-
-    print(analyser.data.head())
-    analyser.data = extract_time_features(analyser.data)
-    analyser.data = extract_behavioural_features(analyser.data)
-    analyser.data.to_csv('data/feature_engineered_data.csv', index=False)
+    analyser.data.to_csv('data/aggregated_data.csv', index=False)
 
     sys.exit(0)
 

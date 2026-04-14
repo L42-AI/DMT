@@ -64,6 +64,31 @@ class Aggregator:
             
             return self.data
 
+    def communication_events(self, inplace: bool = False) -> pd.DataFrame:
+        """
+        For communication events (calls and sms), we want to aggregate the data into daily format, since the exact timing of these events is not relevant for our analysis. We will sum the number of calls and sms per day per ID.
+        """
+
+        agg_data = self.data[self.data['variable'].isin(['call', 'sms'])].copy()
+        agg_data['time'] = pd.to_datetime(agg_data['time'])
+        agg_data.set_index('time', inplace=True)
+        agg_data = agg_data.groupby(['id', 'variable']).resample('D')['value'].sum().reset_index()
+        agg_data['value'] = agg_data['value'].round(0).astype(int)
+        agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
+
+        if inplace:
+            new_data = pd.concat(
+                [
+                    self.data[~self.data['variable'].isin(['call', 'sms'])],
+                    agg_data
+                ]
+            ).reset_index(drop=True).sort_values(['variable', 'id', 'time'])
+
+            self.data.__dict__.update(new_data.__dict__)
+            return self.data
+
+        return agg_data.sort_values(['variable', 'id', 'time'])
+
     def targets(self, inplace: bool = False) -> pd.DataFrame:
         """
         Mood is predicted as a mean per day, so we want to aggregate mood data into daily format. This is a simple mean aggregation per day per ID.
