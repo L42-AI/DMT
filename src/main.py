@@ -14,6 +14,7 @@ def main():
     
     analyser.process_outliers()
     analyser.aggregate.time_data(interval=1, unit='H', inplace=True)
+    analyser.aggregate.communication_events(interval=1, unit='H', inplace=True)
     analyser.aggregate.targets(inplace=True)
 
     analyser.data.to_csv('data/aggregated_data.csv', index=False)

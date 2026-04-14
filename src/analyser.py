@@ -64,15 +64,20 @@ class Aggregator:
             
             return self.data
 
-    def communication_events(self, inplace: bool = False) -> pd.DataFrame:
+    def communication_events(self, interval: int, unit: str, inplace: bool = False) -> pd.DataFrame:
         """
         For communication events (calls and sms), we want to aggregate the data into daily format, since the exact timing of these events is not relevant for our analysis. We will sum the number of calls and sms per day per ID.
         """
 
+        assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
+        assert unit in ['M', 'H', 'D'], "Unit must be one of 'M', 'H', or 'D'"
+
+        if unit == 'M': unit = 'min'
+
         agg_data = self.data[self.data['variable'].isin(['call', 'sms'])].copy()
         agg_data['time'] = pd.to_datetime(agg_data['time'])
         agg_data.set_index('time', inplace=True)
-        agg_data = agg_data.groupby(['id', 'variable']).resample('D')['value'].sum().reset_index()
+        agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].sum().reset_index()
         agg_data['value'] = agg_data['value'].round(0).astype(int)
         agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
 
