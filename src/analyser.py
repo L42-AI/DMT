@@ -8,7 +8,7 @@ from scipy import stats
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
 
-from consts import APPCAT_VARS, USER_VARS
+from consts import APPCAT_VARS, USER_VARS, SENSOR_VARS
 
 import helpers as _helpers
 
@@ -100,7 +100,18 @@ class Analyser:
 
         self._handle_unlikely_outliers()
 
-    def aggregate(self, interval: int, unit: str, inplace: bool = False) -> pd.DataFrame:
+    def apply_scaling(self):
+        
+        # Variable arousal and valence are -2 to 2 --> scale to -1 to 1 by dividing by 2
+        div_by_2_mask = self.data['variable'].isin(['circumplex.arousal', 'circumplex.valence'])
+
+        self.data.loc[div_by_2_mask, 'value'] = self.data.loc[div_by_2_mask, 'value'] / 2
+
+        # TODO: Consider if good idea to scale target
+        # Variable mood is 1-10 --> scale to 0-1 by applying (value - 1) / 9
+        self.data.loc[self.data['variable'] == 'mood', 'value'] = (self.data.loc[self.data['variable'] == 'mood', 'value'] - 1) / 9
+
+    def aggregate_time_data(self, interval: int, unit: str, inplace: bool = False) -> pd.DataFrame:
         """
         Aggregates all sensor data into specified time intervals.
 
@@ -110,13 +121,13 @@ class Analyser:
         """
 
         def convert_to_seconds(value: float, unit: str) -> int:
-            multipier_map = {
+            multiplier_map = {
                 'M': 60,
                 'H': 3600,
                 'D': 86400
             }
 
-            return int(value * multipier_map[unit])
+            return int(value * multiplier_map[unit])
 
         assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
         assert unit in ['M', 'H', 'D'], "Unit must be one of 'M', 'H', or 'D'"
@@ -130,9 +141,11 @@ class Analyser:
         agg_data.set_index('time', inplace=True)
         agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].sum().reset_index() 
         agg_data['value'] = agg_data['value'].where(agg_data['value'] <= seconds, seconds)
+
+        # TODO: Consider scaling to 0-1 range by dividing by total possible seconds
         agg_data['value'] = agg_data['value'].round(3)
 
-        agg_data.sort_values(['variable', 'id', 'time'])
+        agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
 
         if inplace:
             self.data = pd.concat(
@@ -143,6 +156,29 @@ class Analyser:
             ).reset_index(drop=True).sort_values(['variable', 'id', 'time'])
             return self.data
         
+        return agg_data.sort_values(['variable', 'id', 'time'])
+
+    def aggregate_targets(self, inplace: bool = False) -> pd.DataFrame:
+        """
+        Mood is predicted as a mean per day, so we want to aggregate mood data into daily format. This is a simple mean aggregation per day per ID.
+        """
+
+        agg_data = self.data[self.data['variable'] == 'mood'].copy()
+        agg_data['time'] = pd.to_datetime(agg_data['time'])
+        agg_data.set_index('time', inplace=True)
+        agg_data = agg_data.groupby(['id', 'variable']).resample('D')['value'].mean().reset_index()
+        agg_data['value'] = agg_data['value'].round(2)
+        agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
+
+        if inplace:
+            self.data = pd.concat(
+                [
+                    self.data[self.data['variable'] != 'mood'],
+                    agg_data
+                ]
+            ).reset_index(drop=True).sort_values(['variable', 'id', 'time'])
+            return self.data
+
         return agg_data.sort_values(['variable', 'id', 'time'])
 
     # === Methods ===
