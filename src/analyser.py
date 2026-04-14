@@ -102,7 +102,7 @@ class Analyser:
         self.scored_vars = USER_VARS
         self.sensor_vars = [var for var in self.data['variable'].unique() if var not in self.scored_vars]
         
-        self.agg = Aggregator(data)
+        self.aggregate = Aggregator(data)
 
     def _handle_impossible_outliers(self):
         """
