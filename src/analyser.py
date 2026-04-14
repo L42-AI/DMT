@@ -339,6 +339,21 @@ class Analyser:
         if listwise_deletion:
             scored_na_mask = (self.daily_data['variable'].isin(self.scored_vars)) & (self.daily_data['value'].isna())
             self.daily_data = self.daily_data[~scored_na_mask].reset_index(drop=True)
+            return
+        
+        # Create individual dataframes of format (seq_length, vars + 1)
+        ind_data = self.daily_data.groupby('id')
+        for id, data in ind_data:
+            wide_data = _helpers.wide_format_daily(data).reset_index()
+        
+            # TODO: NEED to align data to first day of observation!
+
+            wide_data['date'] = (wide_data['date'] - wide_data['date'].iloc[0]).dt.days.values
+            wide_data = wide_data.drop(columns = "id")
+            # Save for CATSI
+            dir = Path('src/data/catsi')
+            dir.mkdir(exist_ok=True, parents=True)
+            wide_data.to_csv(dir / f"{id}.csv")
 
 
     def get_suggested_transformations(self):

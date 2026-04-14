@@ -18,20 +18,22 @@ def main():
 
     analyser.data.to_csv('data/aggregated_data.csv', index=False)
 
-    sys.exit(0)
+    # sys.exit(0)
 
     # === Daily Data Analysis ===
 
     # Show correlations between all variables
     visualiser.load(analyser.data, analyser.daily_data)
 
-    visualiser.individual_outlier_plot(save=True)
-    visualiser.var_correlations_per_id(save=True)
-    visualiser.heatmap_missing_values_per_id(save=True)
-    visualiser.val_dist_per_var(save=True)
-    visualiser.var_dist_per_id(save=True)
-    visualiser.ts_dist_per_id(save=True)
-    visualiser.ts_dist_per_var(save=True)
+    # visualiser.individual_outlier_plot(save=True)
+    # visualiser.var_correlations_per_id(save=True)
+    # visualiser.heatmap_missing_values_per_id(save=True)
+    # visualiser.val_dist_per_var(save=True)
+    # visualiser.var_dist_per_id(save=True)
+    # visualiser.ts_dist_per_id(save=True)
+    # visualiser.ts_dist_per_var(save=True)
+    # visualiser.timestamp_heatmap(save=True)
+
 
     
     """
@@ -48,10 +50,10 @@ def main():
 
     For scored data:
     I'm thinking of the CATSI imputation algorithm, which is a context-aware time-series imputation technique"""
-    analyser.impute()
+    analyser.impute(listwise_deletion= False)
 
     # Correlations between variables after imputation
-    visualiser.var_correlations_per_id(save=True)
+    # visualiser.var_correlations_per_id(save=True)
 
 
 
