@@ -34,8 +34,14 @@ class Aggregator:
 
             return int(value * multiplier_map[unit])
 
-        assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
         assert unit in ['M', 'H', 'D'], "Unit must be one of 'M', 'H', or 'D'"
+        
+        if unit == 'M':
+            assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
+        elif unit == 'H':
+            assert interval in [1, 2, 3, 4, 6, 8, 12, 24], "Interval must be one of [1, 2, 3, 4, 6, 8, 12, 24]"
+        else:
+            assert interval in [1, 2, 3, 4, 5, 6, 7], "Interval must be one of [1, 2, 3, 4, 5, 6, 7]"
 
         seconds = convert_to_seconds(interval, unit)
 
@@ -64,13 +70,54 @@ class Aggregator:
             
             return self.data
 
+    def activity(self, interval: int, unit: str, inplace: bool = False) -> pd.DataFrame:
+        """
+        For activity, we want to aggregate the data into hourly format, since the exact timing of activity is not relevant for our analysis. We will take the sum of the activity variable per hour per ID, since this variable is a binary variable indicating whether the individual was active or not.
+        """
+        assert unit in ['M', 'H', 'D'], "Unit must be one of 'M', 'H', or 'D'"
+        
+        if unit == 'M':
+            assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
+        elif unit == 'H':
+            assert interval in [1, 2, 3, 4, 6, 8, 12, 24], "Interval must be one of [1, 2, 3, 4, 6, 8, 12, 24]"
+        else:
+            assert interval in [1, 2, 3, 4, 5, 6, 7], "Interval must be one of [1, 2, 3, 4, 5, 6, 7]"
+
+        if unit == 'M': unit = 'min'
+
+        agg_data = self.data[self.data['variable'] == 'activity'].copy()
+        agg_data['time'] = pd.to_datetime(agg_data['time'])
+        agg_data.set_index('time', inplace=True)
+        agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].mean().reset_index()
+        agg_data['value'] = agg_data['value'].round(3)
+        agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
+
+        if inplace:
+            new_data = pd.concat(
+                [
+                    self.data[self.data['variable'] != 'activity'],
+                    agg_data
+                ]
+            ).reset_index(drop=True).sort_values(['variable', 'id', 'time'])
+
+            self.data.__dict__.update(new_data.__dict__)
+            return self.data
+
+        return agg_data.sort_values(['variable', 'id', 'time'])
+
     def communication_events(self, interval: int, unit: str, inplace: bool = False) -> pd.DataFrame:
         """
         For communication events (calls and sms), we want to aggregate the data into daily format, since the exact timing of these events is not relevant for our analysis. We will sum the number of calls and sms per day per ID.
         """
 
-        assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
         assert unit in ['M', 'H', 'D'], "Unit must be one of 'M', 'H', or 'D'"
+        
+        if unit == 'M':
+            assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
+        elif unit == 'H':
+            assert interval in [1, 2, 3, 4, 6, 8, 12, 24], "Interval must be one of [1, 2, 3, 4, 6, 8, 12, 24]"
+        else:
+            assert interval in [1, 2, 3, 4, 5, 6, 7], "Interval must be one of [1, 2, 3, 4, 5, 6, 7]"
 
         if unit == 'M': unit = 'min'
 
@@ -94,12 +141,12 @@ class Aggregator:
 
         return agg_data.sort_values(['variable', 'id', 'time'])
 
-    def targets(self, inplace: bool = False) -> pd.DataFrame:
+    def reported_data(self, inplace: bool = False) -> pd.DataFrame:
         """
         Mood is predicted as a mean per day, so we want to aggregate mood data into daily format. This is a simple mean aggregation per day per ID.
         """
 
-        agg_data = self.data[self.data['variable'] == 'mood'].copy()
+        agg_data = self.data[self.data['variable'].isin(['mood', 'circumplex.arousal', 'circumplex.valence'])].copy()
         agg_data['time'] = pd.to_datetime(agg_data['time'])
         agg_data.set_index('time', inplace=True)
         agg_data = agg_data.groupby(['id', 'variable']).resample('D')['value'].mean().reset_index()
@@ -109,7 +156,7 @@ class Aggregator:
         if inplace:
             new_data = pd.concat(
                 [
-                    self.data[self.data['variable'] != 'mood'],
+                    self.data[~self.data['variable'].isin(['mood', 'circumplex.arousal', 'circumplex.valence'])],
                     agg_data
                 ]
             ).reset_index(drop=True).sort_values(['variable', 'id', 'time'])
@@ -126,7 +173,6 @@ class Analyser:
 
         # Create date column
         self.data['date'] = self.data['time'].dt.date
-        self.daily_data = None
 
         # Variable types
         self.scored_vars = USER_VARS
@@ -332,28 +378,25 @@ class Analyser:
         self.daily_data = daily_data
 
     def impute(self, listwise_deletion: bool = True):
-        # NOTE: In progress, imputation for scored variables still missing
-        if self.daily_data is None:
-            raise ValueError("Daily data is not defined")
 
         # sensor-data imputation
-        sensor_mask = (self.daily_data['variable'].isin(self.sensor_vars)) & (self.daily_data['value'].isna())
-        self.daily_data.loc[sensor_mask, 'value'] = 0
+        sensor_mask = (self.data['variable'].isin(self.sensor_vars)) & (self.data['value'].isna())
+        self.data.loc[sensor_mask, 'value'] = 0
 
         # remove na-rows in scored variable data
         if listwise_deletion:
-            scored_na_mask = (self.daily_data['variable'].isin(self.scored_vars)) & (self.daily_data['value'].isna())
-            self.daily_data = self.daily_data[~scored_na_mask].reset_index(drop=True)
+            scored_na_mask = (self.data['variable'].isin(self.scored_vars)) & (self.data['value'].isna())
+            self.data = self.data[~scored_na_mask].reset_index(drop=True)
             return
         
         # Create individual dataframes of format (seq_length, vars + 1)
-        ind_data = self.daily_data.groupby('id')
+        ind_data = self.data.groupby('id')
         for id, data in ind_data:
             wide_data = _helpers.wide_format_daily(data).reset_index()
         
             # TODO: NEED to align data to first day of observation!
 
-            wide_data['date'] = (wide_data['date'] - wide_data['date'].iloc[0]).dt.days.values
+            wide_data['time'] = (wide_data['time'] - wide_data['time'].iloc[0]).dt.days.values
             wide_data = wide_data.drop(columns = "id")
             # Save for CATSI
             dir = Path('src/data/catsi')

@@ -11,15 +11,18 @@ def main():
     data = _data.load()
     visualiser = Visualiser(data)
     analyser = Analyser(data)
-    
+
     analyser.process_outliers()
-    analyser.aggregate.time_data(interval=1, unit='H', inplace=True)
-    analyser.aggregate.communication_events(interval=1, unit='H', inplace=True)
-    analyser.aggregate.targets(inplace=True)
+    analyser.aggregate.time_data(interval=12, unit='H', inplace=True)
+    analyser.aggregate.activity(interval=12, unit='H', inplace=True)
+    analyser.aggregate.communication_events(interval=12, unit='H', inplace=True)
+    analyser.aggregate.reported_data(inplace=True)
+
+    analyser.impute(listwise_deletion=False)
 
     analyser.data.to_csv('data/aggregated_data.csv', index=False)
 
-    # sys.exit(0)
+    sys.exit(0)
 
     # === Daily Data Analysis ===
 
