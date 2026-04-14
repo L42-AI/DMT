@@ -228,6 +228,7 @@ class Visualiser:
             if save:
                 dir.mkdir(parents = True, exist_ok= True)
                 save_path = dir / f"multibar_{var}.png"
+                print("Hello")
                 plt.savefig(save_path)
                 plt.close()
 

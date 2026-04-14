@@ -1,6 +1,8 @@
 import pandas as pd
 
 def wide_format_daily(data: pd.DataFrame):
+    """ Returns data in wide format: (id[/date], vars)
+    """
     return data.pivot(index = ['id', 'date'], columns = 'variable', values= 'value')
 
 def total_time_range(time_series: pd.Series):
