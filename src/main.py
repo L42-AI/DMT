@@ -30,7 +30,7 @@ def main():
 
     # Pipeline(analyser).train()
 
-    sys.exit(0)
+    # sys.exit(0)
 
     # === Daily Data Analysis ===
 
