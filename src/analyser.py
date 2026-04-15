@@ -407,11 +407,14 @@ class Analyser:
                 
                 wide_data.insert(0, 'datetime', time_index)
 
-            self.data = catsi_impute(data_dir= dir, epochs = epochs, reload_raw=True)
+            new_data = catsi_impute(data_dir= dir, epochs = epochs, reload_raw=True)
+            self.data.__dict__.update(new_data.__dict__)
 
         if delete:
             ind_wides = {id: wide_data.dropna(subset=self.scored_vars) for id, wide_data in ind_wides.items()}
-            self.data = _helpers.wide_to_long_global(ind_wides)
+            new_data = _helpers.wide_to_long_global(ind_wides)
+            self.data.__dict__.update(new_data.__dict__)
+
 
     def get_suggested_transformations(self):
         """
