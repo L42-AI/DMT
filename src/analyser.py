@@ -8,9 +8,10 @@ from scipy import stats
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
 
-from consts import APPCAT_VARS, USER_VARS, SENSOR_VARS
+from consts import APPCAT_VARS, USER_VARS, SENSOR_VARS, VAR_NAMES_ORDER
 
 import helpers as _helpers
+from CATSI.custom_utils import catsi_impute
 
 class Aggregator:
     def __init__(self, data: pd.DataFrame):
@@ -377,32 +378,48 @@ class Analyser:
         
         self.daily_data = daily_data
 
-    def impute(self, listwise_deletion: bool = True):
+    def impute(self, delete: bool = True, catsi: bool = False, epochs: int = 100):
 
         # sensor-data imputation
-        sensor_mask = (self.data['variable'].isin(self.sensor_vars)) & (self.data['value'].isna())
-        self.data.loc[sensor_mask, 'value'] = 0
-
-        # remove na-rows in scored variable data
-        if listwise_deletion:
-            scored_na_mask = (self.data['variable'].isin(self.scored_vars)) & (self.data['value'].isna())
-            self.data = self.data[~scored_na_mask].reset_index(drop=True)
-            return
+        ind_wides = _helpers.long_to_wide_per_ind(self.data)
+        for id, wide_data in ind_wides.items():    
+            for var in self.sensor_vars:
+                sensor_mask = wide_data[var].isna()
+                wide_data.loc[sensor_mask, var] = 0
         
-        # Create individual dataframes of format (seq_length, vars + 1)
-        ind_data = self.data.groupby('id')
-        for id, data in ind_data:
-            wide_data = _helpers.wide_format_daily(data).reset_index()
-        
-            # TODO: NEED to align data to first day of observation!
-
-            wide_data['time'] = (wide_data['time'] - wide_data['time'].iloc[0]).dt.days.values
-            wide_data = wide_data.drop(columns = "id")
+        catsi = True
+        if catsi:
             # Save for CATSI
             dir = Path('src/data/catsi')
             dir.mkdir(exist_ok=True, parents=True)
-            wide_data.to_csv(dir / f"{id}.csv")
+            for id, wide_data in ind_wides.items():
+                time_series = wide_data.index.to_series()
+                wide_data = wide_data.reindex(columns=VAR_NAMES_ORDER)
+                time_index = pd.to_datetime(wide_data.index)
+                wide_data.insert(0, 'seconds', (time_index.astype('int64') // 10**9).astype(float))
+                # wide_data.insert(0, 'seconds', (time_series - time_series.iloc[0]).dt.total_seconds())
+                wide_data.to_csv(dir / f"{id}.csv")
+            self.data = catsi_impute(data_dir= dir, epochs = epochs)
 
+
+
+
+        if delete:
+            ind_wides = {id: wide_data.dropna(subset=self.scored_vars) for id, wide_data in ind_wides.items()}
+            self.data = _helpers.wide_to_long_global(ind_wides)
+
+        
+ 
+        
+        # # Create individual dataframes of format (seq_length, vars + 1)
+        # ind_data = self.data.groupby('id')
+        # for id, data in ind_data:
+        #     wide_data = _helpers.wide_format_daily(data).reset_index()
+        
+        #     # TODO: NEED to align data to first day of observation!
+
+        #     wide_data['time'] = (wide_data['time'] - wide_data['time'].iloc[0]).dt.days.values
+        #     wide_data = wide_data.drop(columns = "id")
 
     def get_suggested_transformations(self):
         """

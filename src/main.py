@@ -4,6 +4,7 @@ from visualiser import Visualiser
 from analyser import Analyser
 from pipeline import Pipeline
 import data as _data
+import helpers as _helpers
 
 from features import extract_behavioural_features, extract_time_features
 
@@ -19,20 +20,24 @@ def main():
     analyser.aggregate.communication_events(interval=1, unit='D', inplace=True)
     analyser.aggregate.reported_data(inplace=True)
 
-    analyser.impute(listwise_deletion=False)
-
     analyser.data.to_csv('data/aggregated_data.csv', index=False)
+    analyser.impute(delete=False, catsi=True, epochs=10)
+    analyser.data.to_csv('data/aggregated_data_after_impute.csv', index=False)
 
-    id_col, X, y = Pipeline(analyser).prepare()
+    
+    # print(_helpers.wide_format_daily(analyser.data))
+    
 
-    Pipeline(analyser).train()
+    # id_col, X, y = Pipeline(analyser).prepare()
 
-    sys.exit(0)
+    # Pipeline(analyser).train()
+
+    # sys.exit(0)
 
     # === Daily Data Analysis ===
 
     # Show correlations between all variables
-    visualiser.load(analyser.data, analyser.daily_data)
+    # visualiser.load(analyser.data, analyser.daily_data)
 
     # visualiser.individual_outlier_plot(save=True)
     # visualiser.var_correlations_per_id(save=True)
@@ -59,7 +64,7 @@ def main():
 
     For scored data:
     I'm thinking of the CATSI imputation algorithm, which is a context-aware time-series imputation technique"""
-    analyser.impute(listwise_deletion= False)
+    # analyser.impute(listwise_deletion= False)
 
     # Correlations between variables after imputation
     # visualiser.var_correlations_per_id(save=True)

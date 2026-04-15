@@ -28,3 +28,25 @@ SENSOR_VARS = APPCAT_VARS + ['screen', 'activity']
 EVENT_VARS = ['call', 'sms']
 
 ALL_VARS = SENSOR_VARS + USER_VARS + EVENT_VARS
+
+VAR_NAMES_ORDER = [
+    'activity',
+    'appCat.builtin',
+    'appCat.communication',
+    'appCat.entertainment',
+    'appCat.finance',
+    'appCat.game',
+    'appCat.office',
+    'appCat.other',
+    'appCat.social',
+    'appCat.travel',
+    'appCat.unknown',
+    'appCat.utilities',
+    'appCat.weather',
+    'screen',
+    'circumplex.arousal',
+    'circumplex.valence',
+    'mood',
+    'call',
+    'sms',
+]
