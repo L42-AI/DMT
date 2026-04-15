@@ -24,13 +24,11 @@ def main():
     analyser.impute(delete=False, catsi=True, epochs=10)
     analyser.data.to_csv('data/aggregated_data_after_impute.csv', index=False)
 
-    
-    print(_helpers.wide_format_daily(analyser.data))
-    
+    print(analyser.data.isna().any())    
 
-    id_col, X, y = Pipeline(analyser).prepare()
+    # id_col, X, y = Pipeline(analyser).prepare()
 
-    Pipeline(analyser).train()
+    # Pipeline(analyser).train()
 
     sys.exit(0)
 

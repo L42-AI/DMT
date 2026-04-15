@@ -74,29 +74,45 @@ def replace_nan_with_col_mean(x):
 def load_raw_data(data_dir):
     def load_ith_pt_training(idx):
         
-        data = pd.read_csv(data_dir / f"{idx}.csv").iloc[:, 1:].values
-        loaded_order = data.columns.tolist()[1:]  # skip first feature column 'seconds'
+        pd_data = pd.read_csv(data_dir / f"{idx}.csv")
+        loaded_order = pd_data.columns.tolist()[2:]  # skip first two feature columns 'datetime' and 'seconds'
         if loaded_order != VAR_NAMES:
             raise ValueError(f"Column order mismatch for {idx}: {loaded_order}")
-            
-        # Problem is here, these are not really timestamps, but time-distance from 
-        # first datapoint, which is needed for delta.
-        # Possible solution: Relocate transformation from time-stamps here, then save 
-        # the time-stamps seperately
-        time_stamps = data[:, 0]
-        values = data[:, 1:]
+        
+        orig_data_values = pd_data.values
+
+        print(f"Diagnostics for id {idx}")
+
+        # Date-time values, to be trimmed and not used
+        time_stamps = orig_data_values[:, 0]
+        print(f"Datetimes:")
+        print(time_stamps.shape)
+
+        
+        # Distances from timestep 0, to be trimmed and used
+        time_distances = orig_data_values[:, 1]
+        print(f"Time distances:")
+        print(time_distances.shape)
+
+
+        # Individual data
+        values = pd_data.iloc[:, 2:].values
+        print(f"Data value shape:")
+        print(values.shape)
+
 
         # Trimming
         for t in range(values.shape[0]):
             if ~(values[t, :13] == 0).all():
-                trim_start = t
                 values = values[t:, :]
+                time_distances = time_distances[t:]
                 time_stamps = time_stamps[t:]
                 break
 
         for t in range(values.shape[0] - 1, 0, -1):
             if ~np.isnan(values[t, 16]):
                 values = values[:t, :]
+                time_distances = time_distances[:t]
                 time_stamps = time_stamps[:t]
                 break
 
@@ -106,11 +122,14 @@ def load_raw_data(data_dir):
         ptmin = np.nanmin(values, axis=0).reshape(1, -1)
 
         observed_mask = (~missing_flag).astype(float)
-        delta = construct_delta_matrix(values, time_stamps, observed_mask)
+        delta = construct_delta_matrix(values, time_distances, observed_mask)
+        print('delta matrix shape')
+        print(delta.shape)
         
         return {
             'pt_with_na': values,
-            'time_stamps': time_stamps,
+            'time_stamps': time_distances,
+            'date_time': time_stamps,
             'observed_mask': observed_mask,
             'pt_max': ptmax,
             'pt_min': ptmin,
@@ -208,8 +227,11 @@ def build_data_loader(dataset,
                                           batch_first=True).to(device)
         data_dict['deltas'] = pad_sequence([torch.FloatTensor(x['delta']) for x in batch_data],
                                            batch_first=True).to(device)
-        data_dict['time_stamps'] = pad_sequence([torch.FloatTensor(x['time_stamps']) for x in batch_data],
-                                                batch_first=True).to(device)
+        data_dict['time_stamps'] = pad_sequence(
+            [torch.from_numpy(np.asarray(x['time_stamps'], dtype=np.float32)) for x in batch_data],
+            batch_first=True,
+        ).to(device)
+        print(f'time_stamps shape: {data_dict['time_stamps'].shape}')
 
         data_dict['lengths'] = lengths.to(device)
         data_dict['pids'] = pids
@@ -217,7 +239,8 @@ def build_data_loader(dataset,
                                                                   for x in batch_data])).to(device).unsqueeze(1)
         data_dict['min_vals'] = torch.FloatTensor(np.concatenate([x['pt_min']
                                                                   for x in batch_data])).to(device).unsqueeze(1)
-
+        data_dict['date_time'] = [np.asarray(x['date_time']) for x in batch_data]
+        
         """ !!! This is likely what gets passed to the forward method of CATSI"""
         return data_dict
         
@@ -255,8 +278,10 @@ def _imputed_batch_to_long(batch: dict, imputations: torch.Tensor, only_missing:
     rows = []
     for i, pid in enumerate(batch['pids']):
         T = batch['lengths'][i].item()          
-        ts_numeric = batch['time_stamps'][i, :T].cpu().numpy()   # shape (T,)
-        dates = pd.to_datetime(ts_numeric, unit='s', origin='unix') 
+        # ts_numeric = batch['date_time'][i, :T].cpu().numpy()   # shape (T,)
+        # dates = pd.to_datetime(ts_numeric, unit='s', origin='unix') 
+        ts_raw = batch['date_time'][i][:T]
+        dates = pd.to_datetime(ts_raw)
         imp = imputations[i, :T, :].cpu().numpy()   # (T, num_vars)
         masks = batch['masks'][i, :T, :].cpu().numpy()
         origs = batch['values'][i, :T, :].cpu().numpy()

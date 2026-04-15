@@ -394,10 +394,20 @@ class Analyser:
 
             for id, wide_data in ind_wides.items():
                 wide_data = wide_data.reindex(columns=VAR_NAMES_ORDER)
+
+                # Accurete date-time values, trimmed by CATSI, but not used. To later be 
+                # added back to long format
                 time_index = pd.to_datetime(wide_data.index)
-                wide_data.insert(0, 'seconds', (time_index.astype('int64') // 10**9).astype(float))
+
+                # Time-distances from timestep 0, to be used by CATSI
+                time_distance = (time_index - time_index[0]).total_seconds()
+                
+                wide_data.insert(0, 'seconds', time_distance.astype(float))
                 wide_data.to_csv(dir / f"{id}.csv")
-            self.data = catsi_impute(data_dir= dir, epochs = epochs)
+                
+                wide_data.insert(0, 'datetime', time_index)
+
+            self.data = catsi_impute(data_dir= dir, epochs = epochs, reload_raw=True)
 
         if delete:
             ind_wides = {id: wide_data.dropna(subset=self.scored_vars) for id, wide_data in ind_wides.items()}
