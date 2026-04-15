@@ -100,17 +100,19 @@ def load_raw_data(data_dir):
         print(f"Data value shape:")
         print(values.shape)
 
-
         # Trimming
         for t in range(values.shape[0]):
-            if ~(values[t, :13] == 0).all():
-                values = values[t:, :]
-                time_distances = time_distances[t:]
-                time_stamps = time_stamps[t:]
+            if not (values[t, :13] == 0).all():
+                for t2 in range(t, values.shape[0]):
+                    if not np.isnan(values[t2, 16]):
+                        values = values[t2:, :]
+                        time_distances = time_distances[t2:]
+                        time_stamps = time_stamps[t2:]
+                        break
                 break
 
         for t in range(values.shape[0] - 1, 0, -1):
-            if ~np.isnan(values[t, 16]):
+            if not np.isnan(values[t, 16]):
                 values = values[:t, :]
                 time_distances = time_distances[:t]
                 time_stamps = time_stamps[:t]

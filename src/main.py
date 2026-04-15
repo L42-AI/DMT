@@ -26,7 +26,7 @@ def main():
     
     train(analyser)
 
-    sys.exit(0)
+    # sys.exit(0)
 
     # === Daily Data Analysis ===
 
