@@ -9,7 +9,7 @@ class Pipeline:
         self.embedding_dim = 16
 
     def prepare(self):
-        wide_format = pd.pivot_table(self.analyser.data, index=('id', 'time'), columns='variable', values='value')
+        wide_format = self.analyser.data.pivot_table(index=['id', 'time'], columns='variable', values='value')
         wide_format['id_col'] = wide_format.index.get_level_values(0)
         wide_format['id_col'] = wide_format['id_col'].apply(lambda x: int(x[-2:]))
         wide_format = wide_format.droplevel(0)
