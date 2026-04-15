@@ -25,14 +25,14 @@ def main():
     analyser.data.to_csv('data/aggregated_data_after_impute.csv', index=False)
 
     
-    # print(_helpers.wide_format_daily(analyser.data))
+    print(_helpers.wide_format_daily(analyser.data))
     
 
-    # id_col, X, y = Pipeline(analyser).prepare()
+    id_col, X, y = Pipeline(analyser).prepare()
 
-    # Pipeline(analyser).train()
+    Pipeline(analyser).train()
 
-    # sys.exit(0)
+    sys.exit(0)
 
     # === Daily Data Analysis ===
 

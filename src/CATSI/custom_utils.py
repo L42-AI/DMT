@@ -79,9 +79,14 @@ def load_raw_data(data_dir):
         if loaded_order != VAR_NAMES:
             raise ValueError(f"Column order mismatch for {idx}: {loaded_order}")
             
+        # Problem is here, these are not really timestamps, but time-distance from 
+        # first datapoint, which is needed for delta.
+        # Possible solution: Relocate transformation from time-stamps here, then save 
+        # the time-stamps seperately
         time_stamps = data[:, 0]
         values = data[:, 1:]
 
+        # Trimming
         for t in range(values.shape[0]):
             if ~(values[t, :13] == 0).all():
                 trim_start = t
@@ -102,11 +107,6 @@ def load_raw_data(data_dir):
 
         observed_mask = (~missing_flag).astype(float)
         delta = construct_delta_matrix(values, time_stamps, observed_mask)
-
-        # +++ Debug +++
-        # if idx == "AS14.01":
-        #     print(observed_mask[:3, 14:])
-        #     print(delta[:3, 14:])
         
         return {
             'pt_with_na': values,
@@ -359,37 +359,3 @@ if __name__=="__main__":
     result = catsi_impute(data_dir, epochs=100, reload_raw=True)
     print(result.head(20))
     print(result.shape)
-
-    # data_dir = Path("src/data/catsi")
-    # train_set, valid_set = load_data(data_path=data_dir, valid_size=0.4, reload_raw=True)
-    # print(train_set)
-    # train_iter = build_data_loader(train_set, torch.device('cpu'), batch_size=4, shuffle=False)
-    # valid_iter = build_data_loader(valid_set, torch.device('cpu'), batch_size=4, shuffle=False)
-
-    # num_vars = 19
-    # model = CATSI(num_vars=num_vars)
-    # fit(model=model, train_iter=train_iter, valid_iter=valid_iter,  epochs = 1)
-
-
-
-    # model.eval()
-    # valid_iter_single = build_data_loader(valid_set, torch.device('cpu'), batch_size=1, shuffle=False)
-    # with torch.no_grad():
-    #     for batch in valid_iter_single:
-
-    #         ret = model(batch)
-    #         pid = batch['pids'][0]
-
-    #         # Get first patient in batch
-    #         imputation = ret['imputations'][0].cpu().numpy()  # (113, 19)
-    #         original = batch['values'][0].cpu().numpy()        # (113, 19)
-    #         mask = batch['masks'][0].cpu().numpy()             # (113, 19)
-
-    #         # Plot mood (find its column index first)
-    #         import matplotlib.pyplot as plt
-    #         mood_idx = 16  
-    #         plt.plot(imputation[:, mood_idx], label='imputed')
-    #         plt.plot(np.where(mask[:, mood_idx], original[:, mood_idx], np.nan), label='observed')
-    #         plt.legend()
-    #         plt.title(f'Mood imputation for {pid}')
-    #         plt.show()

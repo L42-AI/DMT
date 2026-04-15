@@ -387,39 +387,21 @@ class Analyser:
                 sensor_mask = wide_data[var].isna()
                 wide_data.loc[sensor_mask, var] = 0
         
-        catsi = True
         if catsi:
             # Save for CATSI
             dir = Path('src/data/catsi')
             dir.mkdir(exist_ok=True, parents=True)
+
             for id, wide_data in ind_wides.items():
-                time_series = wide_data.index.to_series()
                 wide_data = wide_data.reindex(columns=VAR_NAMES_ORDER)
                 time_index = pd.to_datetime(wide_data.index)
                 wide_data.insert(0, 'seconds', (time_index.astype('int64') // 10**9).astype(float))
-                # wide_data.insert(0, 'seconds', (time_series - time_series.iloc[0]).dt.total_seconds())
                 wide_data.to_csv(dir / f"{id}.csv")
             self.data = catsi_impute(data_dir= dir, epochs = epochs)
-
-
-
 
         if delete:
             ind_wides = {id: wide_data.dropna(subset=self.scored_vars) for id, wide_data in ind_wides.items()}
             self.data = _helpers.wide_to_long_global(ind_wides)
-
-        
- 
-        
-        # # Create individual dataframes of format (seq_length, vars + 1)
-        # ind_data = self.data.groupby('id')
-        # for id, data in ind_data:
-        #     wide_data = _helpers.wide_format_daily(data).reset_index()
-        
-        #     # TODO: NEED to align data to first day of observation!
-
-        #     wide_data['time'] = (wide_data['time'] - wide_data['time'].iloc[0]).dt.days.values
-        #     wide_data = wide_data.drop(columns = "id")
 
     def get_suggested_transformations(self):
         """
