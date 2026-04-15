@@ -2,10 +2,8 @@ import sys
 
 from visualiser import Visualiser
 from analyser import Analyser
-from pipeline import Pipeline
+from train import train
 import data as _data
-import helpers as _helpers
-
 from features import extract_behavioural_features, extract_time_features
 
 def main():
@@ -25,10 +23,8 @@ def main():
     analyser.data.to_csv('data/aggregated_data_after_impute.csv', index=False)
 
     print(analyser.data.isna().any())    
-
-    # id_col, X, y = Pipeline(analyser).prepare()
-
-    # Pipeline(analyser).train()
+    
+    train(analyser)
 
     sys.exit(0)
 
