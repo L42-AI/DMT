@@ -1,7 +1,5 @@
 from metric_accumulator import MetricAccumulator
-
 import torch
-
 from rich.console import Console
 from rich.table import Table
 
@@ -14,16 +12,61 @@ class Trainer:
         self.task_type = task_type
         self.device = device
         self.console = Console()
+        
+        # Set the metric key based on task type
+        self.m_key = 'acc' if self.task_type == 'classification' else 'mae'
 
-    def _calculate_metrics(self, outputs, targets):
-        """ Dynamically calculates the right metric based on the task. """
+    def _compute_metrics(self, loss, outputs, targets):
+        """ Single source of truth for metric calculations. """
+        metrics = {'loss': loss.item()}
+        
         if self.task_type == 'classification':
-            return {'acc': (outputs.argmax(dim=1) == targets).float().mean().item()}
+            preds = outputs.argmax(dim=1)
+            metrics['acc'] = (preds == targets).float().mean().item()
         else: # regression
-            return {'mae': torch.abs(outputs - targets).mean().item()}
+            metrics['mae'] = torch.abs(outputs - targets).mean().item()
+            
+        return metrics
+
+    def _train_epoch(self, dataloader):
+        """ Handles the training loop for a single epoch. """
+        self.model.train()
+        metrics = MetricAccumulator()
+        
+        for batch in dataloader:
+            id_tensor, X_tensor, y_tensor = [b.to(self.device) for b in batch]
+            
+            self.optimizer.zero_grad()
+            outputs = self.model(id_tensor, X_tensor)
+            loss = self.criterion(outputs, y_tensor)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            self.optimizer.step()
+
+            batch_metrics = self._compute_metrics(loss, outputs, y_tensor)
+            metrics.update(batch_metrics)
+            
+        return metrics.get_averages()
+
+    def _validate_epoch(self, dataloader):
+        """ Handles the validation loop for a single epoch. """
+        self.model.eval() 
+        metrics = MetricAccumulator()
+        
+        with torch.no_grad():
+            for batch in dataloader:
+                id_tensor, X_tensor, y_tensor = [b.to(self.device) for b in batch]
+                
+                outputs = self.model(id_tensor, X_tensor)
+                loss = self.criterion(outputs, y_tensor)
+                
+                batch_metrics = self._compute_metrics(loss, outputs, y_tensor)
+                metrics.update(batch_metrics)
+                
+        return metrics.get_averages()
 
     def _print_header(self):
-        """ Dynamically builds the table header. """
+        """ Builds the table header dynamically. """
         self.console.rule(f"[bold]{self.task_type.title()} Training Log[/bold]")
         table = Table(box=None, padding=(0, 2), show_header=True, show_edge=False)
         
@@ -38,93 +81,41 @@ class Trainer:
         self.console.print(table)
         self.console.print("─" * 55, style="dim")
 
-    def fit(self, train_loader, val_loader=None, num_epochs=10):
-        self._print_header()
+    def _log_epoch(self, epoch, train_metrics, val_metrics=None):
+        """ Handles the rich table row formatting for the epoch. """
+        row_table = Table(box=None, padding=(0, 2), show_header=False, show_edge=False)
         
-        # Determine which metric key we are looking for when formatting the string
-        m_key = 'acc' if self.task_type == 'classification' else 'mae'
+        row_table.add_column(justify="right", style="cyan")    
+        row_table.add_column(justify="right", style="green")   
+        row_table.add_column(justify="right", style="magenta") 
+        row_table.add_column(justify="right", style="yellow")  
+        row_table.add_column(justify="right", style="blue")    
+        
+        # Format Train Metrics
+        train_loss = f"{train_metrics.get('loss', 0.0):.4f}"
+        train_val = train_metrics.get(self.m_key, 0.0)
+        train_m_str = f"{train_val:.1%}" if self.task_type == 'classification' else f"{train_val:.4f}"
+
+        # Format Validation Metrics
+        val_loss = "---"
+        val_m_str = "---"
+        if val_metrics:
+            val_loss = f"{val_metrics.get('loss', 0.0):.4f}"
+            val_val = val_metrics.get(self.m_key, 0.0)
+            val_m_str = f"{val_val:.1%}" if self.task_type == 'classification' else f"{val_val:.4f}"
+        
+        row_table.add_row(f"{epoch:03d}", train_loss, train_m_str, val_loss, val_m_str)
+        self.console.print(row_table)
+
+    def fit(self, train_loader, val_loader=None, num_epochs=10):
+        """ The main entry point for the training loop. """
+        self._print_header()
 
         for epoch in range(1, num_epochs + 1):
+            train_metrics = self._train_epoch(train_loader)
             
-            # --- 1. TRAINING PHASE ---
-            self.model.train()
-            train_metrics = MetricAccumulator()
-            
-            for batch in train_loader:
-                id_tensor, X_tensor, y_tensor = [b.to(self.device) for b in batch]
-                
-                self.optimizer.zero_grad()
-                outputs = self.model(id_tensor, X_tensor)
-                loss = self.criterion(outputs, y_tensor)
-                
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.optimizer.step()
-
-                # Calculate base loss + dynamic task metrics
-                batch_metrics = {
-                    'loss': loss.item(),
-                    'acc': (outputs.argmax(dim=1) == y_tensor).float().mean().item()
-                } if self.task_type == 'classification' else {'loss': loss.item(), 'mae': torch.abs(outputs - y_tensor).mean().item()}
-                
-                batch_metrics.update(self._calculate_metrics(outputs, y_tensor))
-                train_metrics.update(batch_metrics)
-
-            avg_train = train_metrics.get_averages()
-
-            # --- 2. VALIDATION PHASE ---
-            val_loss_str = "---"
-            val_metric_str = "---"
-            
+            val_metrics = None
             if val_loader:
-                self.model.eval() 
-                val_metrics = MetricAccumulator()
+                val_metrics = self._validate_epoch(val_loader)
                 
-                with torch.no_grad():
-                    for batch in val_loader:
-                        id_tensor, X_tensor, y_tensor = [b.to(self.device) for b in batch]
-                        
-                        outputs = self.model(id_tensor, X_tensor)
-                        loss = self.criterion(outputs, y_tensor)
-                        
-                        batch_metrics = {
-                            'loss': loss.item(),
-                            'acc': (outputs.argmax(dim=1) == y_tensor).float().mean().item()
-                        } if self.task_type == 'classification' else {'loss': loss.item(), 'mae': torch.abs(outputs - y_tensor).mean().item()}
-                        
-                        batch_metrics.update(self._calculate_metrics(outputs, y_tensor))
-                        val_metrics.update(batch_metrics)
-                        
-                avg_val = val_metrics.get_averages()
-                val_loss_str = f"{avg_val['loss']:.4f}"
-                
-                # Format validation metric (percentage for Acc, float for MAE)
-                if self.task_type == 'classification':
-                    val_metric_str = f"{avg_val[m_key]:.1%}"
-                else:
-                    val_metric_str = f"{avg_val[m_key]:.4f}"
-
-            # --- 3. LOGGING ---
-            row_table = Table(box=None, padding=(0, 2), show_header=False, show_edge=False)
-            
-            row_table.add_column(justify="right", style="cyan")    # Epoch
-            row_table.add_column(justify="right", style="green")   # Train Loss
-            row_table.add_column(justify="right", style="magenta") # Train Metric
-            row_table.add_column(justify="right", style="yellow")  # Val Loss
-            row_table.add_column(justify="right", style="blue")    # Val Metric
-            
-            # Format train metric
-            train_metric_val = avg_train.get(m_key, 0.0)
-            if self.task_type == 'classification':
-                train_metric_str = f"{train_metric_val:.1%}"
-            else:
-                train_metric_str = f"{train_metric_val:.4f}"
-            
-            row_table.add_row(
-                f"{epoch:03d}", 
-                f"{avg_train.get('loss', 0.0):.4f}", 
-                train_metric_str, 
-                val_loss_str,
-                val_metric_str
-            )
-            self.console.print(row_table)
+            self._log_epoch(epoch, train_metrics, val_metrics)
