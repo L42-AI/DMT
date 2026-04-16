@@ -4,7 +4,10 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.model_selection import TimeSeriesSplit
 
+from features.features_behavioural import add_step_behavioural_features
+from features.feature_pipeline import add_static_temporal_features, add_rolling_history
 
+from .models import SimpleMLP, SimpleGRU
 __all__ = [
     'TabularClassification',
     'TimeSeriesClassification',
@@ -17,21 +20,39 @@ class BasePipeline:
         self.analyser = analyser
         self.batch_size = batch_size
 
-    def _prepare_base_data(self):
-        """ Pivots and sorts the dataframe chronologically. """
-        wide_format = self.analyser.data.pivot_table(index=['id', 'time'], columns='variable', values='value')
+    def _prepare_base_data(self) -> pd.DataFrame:
+        """ Pivots the dataframe, resets ID to a column, and sets Time as the sole index. """
+        # Put 'time' first so it becomes the primary index when 'id' is reset
+        wide_format = self.analyser.data.pivot_table(index=['time', 'id'], columns='variable', values='value')
         
-        wide_format['id_col'] = wide_format.index.get_level_values(0)
-        wide_format['id_col'] = wide_format['id_col'].apply(lambda x: int(x[-2:]))
-        wide_format = wide_format.droplevel(0).sort_index()
+        # Move 'id' to a standard column
+        wide_format = wide_format.reset_index(level='id')
+        
+        # Clean the ID strings into integers (e.g. 'AS14.01' -> 1)
+        wide_format['id'] = wide_format['id'].apply(lambda x: int(str(x)[-2:]))
+        
+        # Sort globally by time
+        return wide_format.sort_index()
 
-        id_col = wide_format.pop('id_col')
-        X = wide_format.drop(columns=['mood', 'circumplex.valence', 'circumplex.arousal'])
-        y = wide_format['mood']
+    def _split_x_y_id(self, df: pd.DataFrame):
+        """ Splits the enriched dataframe into Features (X), Targets (y), and IDs. """
+        id_series = df.pop('id')
+        y = df.pop('mood')
         
-        return X, y, id_col
+        X = df.drop(columns=['circumplex.valence', 'circumplex.arousal'], errors='ignore') # TODO: EXAMINE HOW WE CAN USE THESE
+        
+        return X, y, id_series
+
+    def _clean_data(self, X_df):
+        return X_df
+
+    def _scale_features(self, X_train, X_val, X_test):
+        return X_train, X_val, X_test
 
     # --- ABSTRACT METHODS (To be overridden by children) ---
+    def _engineer_features(self, X_df):
+        raise NotImplementedError("Subclasses must define how to engineer features.")
+    
     def _process_features(self, X_df, id_series):
         raise NotImplementedError("Subclasses must define how to shape features (Tabular vs TimeSeries).")
 
@@ -86,37 +107,71 @@ class BasePipeline:
     
     # --- THE TEMPLATE METHOD ---
     def get_dataloaders(self, train_ratio=0.7, val_ratio=0.15):
-        X_df, y_series, id_series = self._prepare_base_data()
+        # 1. Pivot and sort chronologically (keeping 'time' as the index and 'id' as a column)
+        df = self._prepare_base_data()
 
+        # 2. Universal Data Cleaning (e.g., handling missing raw sensor data)
+        df = self._clean_data(df)
+
+        # 3. Architecture-Specific Feature Engineering (Delegated to Tabular or TimeSeries child class)
+        df = self._engineer_features(df)
+
+        # 4. Late Splitting: Separate Features (X), Targets (y), and IDs
+        X_df, y_series, id_series = self._split_x_y_id(df)
+
+        # 5. Shape into Arrays/Sequences based on the architecture
         X_arr, id_arr = self._process_features(X_df, id_series)
-        # UPDATE: Pass id_series here
         y_arr, y_dtype = self._process_targets(y_series, id_series)
 
+        # 6. Global Chronological Split (No data leakage!)
         n = len(X_arr)
         train_end = int(n * train_ratio)
         val_end = int(n * (train_ratio + val_ratio))
 
+        X_train, y_train, id_train = X_arr[:train_end], y_arr[:train_end], id_arr[:train_end]
+        X_val, y_val, id_val = X_arr[train_end:val_end], y_arr[train_end:val_end], id_arr[train_end:val_end]
+        X_test, y_test, id_test = X_arr[val_end:], y_arr[val_end:], id_arr[val_end:]
+
+        # 7. Secure Feature Scaling (Fit on Train, Transform Val and Test)
+        X_train, X_val, X_test = self._scale_features(X_train, X_val, X_test)
+
+        # 8. Package into PyTorch DataLoaders
         def make_loader(X_slice, y_slice, id_slice, shuffle):
             dataset = TensorDataset(
                 torch.tensor(id_slice.copy(), dtype=torch.long),
                 torch.tensor(X_slice.copy(), dtype=torch.float32),
                 torch.tensor(y_slice.copy(), dtype=y_dtype)
             )
+            # Only drop the last batch if we actually have enough data to form full batches
             return DataLoader(dataset, batch_size=self.batch_size, shuffle=shuffle, drop_last=True)
 
-        tss = TimeSeriesSplit(n_splits=5, gap=5)
-        train_loader = make_loader(X_arr[:train_end], y_arr[:train_end], id_arr[:train_end], shuffle=True)
-        val_loader = make_loader(X_arr[train_end:val_end], y_arr[train_end:val_end], id_arr[train_end:val_end], shuffle=False)
-        test_loader = make_loader(X_arr[val_end:], y_arr[val_end:], id_arr[val_end:], shuffle=False)
+        train_loader = make_loader(X_train, y_train, id_train, shuffle=True)
+        val_loader = make_loader(X_val, y_val, id_val, shuffle=False)
+        test_loader = make_loader(X_test, y_test, id_test, shuffle=False)
 
         print(f"\n--- {self.__class__.__name__} Ready ---")
         print(f"Batches -> Train: {len(train_loader)} | Val: {len(val_loader)} | Test: {len(test_loader)}")
+        
         return train_loader, val_loader, test_loader
     
 class TabularPipeline(BasePipeline):
     """ Intermediate class for 2D Data (Decision Trees / Simple NNs). """
     def _process_features(self, X_df, id_series):
         return X_df.values, id_series.values
+    
+    def _engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Tabular models lack memory. They need BOTH static features and 
+        explicit rolling history (moving averages) engineered into the rows.
+        """
+        df = add_step_behavioural_features(df)
+        df = add_static_temporal_features(df)
+        
+        cols_lag_mean = ['work_leisure_ratio', 'activity']
+        cols_sum = ['screen', 'call', 'sms']
+        df = add_rolling_history(df, cols_lag_mean, cols_sum, windows=[3, 7])
+        
+        return df.dropna()
 
 class TimeSeriesPipeline(BasePipeline):
     """ Intermediate class for 3D Sequence Data (GRU / Transformers). """
@@ -137,6 +192,11 @@ class TimeSeriesPipeline(BasePipeline):
                 
         return np.array(seq_X), np.array(seq_ids)
     
+    def _engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = add_step_behavioural_features(df)
+        df = add_static_temporal_features(df)
+        return df.dropna()
+    
 
 class TabularClassification(TabularPipeline):
     def __init__(self, analyser, num_bins=5, batch_size=32):
@@ -144,11 +204,14 @@ class TabularClassification(TabularPipeline):
         self.num_bins = num_bins
         self.num_classes = None
 
-    # UPDATE: Add id_series to signature (even though it isn't used for windowing here)
     def _process_targets(self, y_series, id_series):
         binned_y = pd.qcut(y_series, q=self.num_bins, labels=False)
         self.num_classes = len(np.unique(binned_y.dropna()))
         return binned_y.values, torch.long
+
+    @staticmethod
+    def create_model(input_dim: int, num_classes: int, hidden_dim: int = 64, dropout_rate: float = 0.5):
+        return SimpleMLP(input_dim, hidden_dim, output_dim=num_classes, dropout_rate=dropout_rate)
 
 class TimeSeriesClassification(TimeSeriesPipeline):
     def __init__(self, analyser, seq_len=7, num_bins=5, batch_size=32):
@@ -156,13 +219,11 @@ class TimeSeriesClassification(TimeSeriesPipeline):
         self.num_bins = num_bins
         self.num_classes = None
 
-    # UPDATE: Add id_series to signature
     def _process_targets(self, y_series, id_series): 
         binned_y = pd.qcut(y_series, q=self.num_bins, labels=False)
         self.num_classes = len(np.unique(binned_y.dropna()))
         
         seq_y = []
-        # UPDATE: Use the perfectly aligned id_series passed from the base pipeline
         for user_id in id_series.unique():
             user_y = binned_y[id_series == user_id].values
             for i in range(len(user_y) - self.seq_len + 1):
@@ -170,19 +231,30 @@ class TimeSeriesClassification(TimeSeriesPipeline):
                 
         return np.array(seq_y), torch.long
 
+    @staticmethod
+    def create_model(input_dim: int, num_classes: int, hidden_dim: int = 64, dropout_rate: float = 0.5):
+        return SimpleGRU(input_dim, hidden_dim, output_dim=num_classes, dropout_rate=dropout_rate)
+
 class TabularRegression(TabularPipeline):
-    # UPDATE: Add id_series to signature
     def _process_targets(self, y_series, id_series):
         return y_series.values[:, np.newaxis], torch.float32
 
+    @staticmethod
+    def create_model(input_dim: int, hidden_dim: int = 64, dropout_rate: float = 0.5):
+        # Regression models output a single continuous value
+        return SimpleMLP(input_dim, hidden_dim, output_dim=1, dropout_rate=dropout_rate)
+
 class TimeSeriesRegression(TimeSeriesPipeline):
-    # UPDATE: Add id_series to signature
     def _process_targets(self, y_series, id_series):
         seq_y = []
-        # UPDATE: Use the passed id_series
         for user_id in id_series.unique():
             user_y = y_series[id_series == user_id].values
             for i in range(len(user_y) - self.seq_len + 1):
                 seq_y.append(user_y[i + self.seq_len - 1])
                 
         return np.array(seq_y)[:, np.newaxis], torch.float32
+
+    @staticmethod
+    def create_model(input_dim: int, hidden_dim: int = 64, dropout_rate: float = 0.5):
+        # Regression models output a single continuous value
+        return SimpleGRU(input_dim, hidden_dim, output_dim=1, dropout_rate=dropout_rate)
