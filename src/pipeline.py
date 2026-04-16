@@ -33,6 +33,7 @@ class BasePipeline:
         
         # Clean the ID strings into integers (e.g. 'AS14.01' -> 1)
         wide_format['id'] = wide_format['id'].apply(lambda x: int(str(x)[-2:]))
+        wide_format['id'] = wide_format['id'].astype('category').cat.codes
         
         # Sort globally by time
         return wide_format.sort_index()
@@ -45,7 +46,7 @@ class BasePipeline:
         X = df.drop(columns=['circumplex.valence', 'circumplex.arousal'], errors='ignore') # TODO: EXAMINE HOW WE CAN USE THESE
         
         # Track total unique IDs to size the embedding layer correctly
-        self.num_users = int(id_series.max()) + 1
+        self.num_users = id_series.nunique()
 
         return X, y, id_series
 
