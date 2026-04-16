@@ -2,9 +2,7 @@ import sys
 
 from visualiser import Visualiser
 from analyser import Analyser
-from train import train
 import data as _data
-from features import extract_behavioural_features, extract_time_features
 
 def main():
     # Load the data
@@ -23,8 +21,6 @@ def main():
     analyser.data.to_csv('data/aggregated_data_after_impute.csv', index=False)
 
     print(analyser.data.isna().any())    
-    
-    train(analyser)
 
     # sys.exit(0)
 
