@@ -182,56 +182,63 @@ def train_regression_model(analyser):
     print(f"Saved exact daily predictions to: '{save_path}'")
 
 
-def walk_forward_train(analyser: Analyser)-> None:
-    """ Train a model using walk-forward validation. This is a more robust way to evaluate time-series models, 
-    as it simulates the real-world scenario of training on past data and validating on future data.
-
-    Args:
-        analyser (Analyser): The Analyser object containing the processed data and methods for preparing it for modeling.
+def walk_forward_train(analyser):
+    """ 
+    Train a model using walk-forward validation. 
+    Simulates real-world scenario of training on past data and validating on future data.
     """
-    pipeline = TimeSeriesClassification(analyser, seq_len=7, num_bins=5)
-    folds, test_loader = pipeline.get_walk_forward_loaders(n_splits=5, gap=5, test_ration=0.15)
-
-    # Safely extract the number of features from a single batch
-    sample_id, sample_X, sample_y = next(iter(test_loader))
-    num_features = sample_X.shape[2] # Shape is [batch, seq_len, num_features]
-
-    # 2. Define a Time-Series Model
-    class SimpleGRU(torch.nn.Module):
-        def __init__(self, input_dim: int, hidden_dim: int, num_classes: int):
-            super().__init__()
-            # batch_first=True tells PyTorch our data is [batch, seq, features]
-            self.gru = torch.nn.GRU(input_dim, hidden_dim, batch_first=True)
-            self.fc = torch.nn.Linear(hidden_dim, num_classes)
-
-        def forward(self, x:torch.Tensor):
-            # Pass through GRU
-            out, _ = self.gru(x)
-            # Extract the hidden state from the very last time step in the sequence
-            last_step_out = out[:, -1, :] 
-            # Pass the final state to the classifier
-            return self.fc(last_step_out)
+    # 1. Setup Pipeline
+    # Using a shorter seq_len as discussed to preserve data points
+    pipeline = TimeSeriesClassification(analyser, seq_len=24, num_bins=5, batch_size=16)
     
-    model = SimpleGRU(input_dim=num_features, hidden_dim=64, num_classes=pipeline.num_classes)
+    # get_walk_forward_loaders returns (folds, test_loader)
+    # Each fold is a tuple: (train_loader, val_loader)
+    folds, test_loader = pipeline.get_walk_forward_loaders(n_splits=5, gap=5, test_ratio=0.15)
 
-    # 3. Define Optimizer and Loss
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
-    criterion = torch.nn.CrossEntropyLoss()
+    # 2. Walk-Forward Loop
+    fold_results = []
 
-    # 4. Train (Ensure you use the UniversalTrainer and pass the task_type)
-    trainer = Trainer(model, optimizer, criterion, task_type='classification')
+    for fold_idx, (train_loader, val_loader) in enumerate(folds):
+        print(f"\n" + "="*30)
+        print(f"🚀 STARTING FOLD {fold_idx + 1}/{len(folds)}")
+        print(f"="*30)
+
+        # DESIGN CHOICE: Re-instantiate model/optimizer for every fold.
+        # This ensures each fold is an independent test of the training strategy.
+        model = pipeline.build_model(hidden_dim=32, embed_dim=5, dropout_rate=0.5)
+        
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+        criterion = torch.nn.CrossEntropyLoss()
+
+        # Initialize Trainer
+        trainer = Trainer(model, optimizer, criterion, task_type='classification')
+
+        # Fit on this fold's specific data
+        trainer.fit(train_loader=train_loader, val_loader=val_loader, num_epochs=50)
+        
+        # Optionally: Evaluate on val_loader one last time to save results
+        val_metrics = trainer._validate_epoch(val_loader)
+        fold_results.append(val_metrics)
+
+    # 3. Final Evaluation on the held-out Test Set
+    print("\n" + "X"*40)
+    print("      FINAL WALK-FORWARD TEST")
+    print("X"*40)
     
+    # We use the trainer from the VERY LAST fold to evaluate the test set,
+    # as it has been trained on the most recent data.
+    test_metrics = trainer._validate_epoch(test_loader)
+    
+    avg_fold_acc = sum(f['acc'] for f in fold_results) / len(fold_results)
+    
+    print(f"Average Fold Validation Accuracy: {avg_fold_acc:.2%}")
+    print(f"Final Held-out Test Accuracy:    {test_metrics.get('acc', 0.0):.2%}")
 
-    for fold, (train_loader, val_loader) in enumerate(folds):
-        print(f"\n--- Fold {fold+1}/{len(folds)} ---")
-        # Define model, optimizer, criterion as before
-        # Train on train_loader, validate on val_loader
-        # Optionally save fold results for later analysis 
-        trainer.fit(train_loader=train_loader, val_loader=val_loader, num_epochs=200)  
+    return fold_results, test_metrics
 
 def main():
     analyser = prepare_data()
-    train_classification_model(analyser)
+    walk_forward_train(analyser)
     # train_regression_model(analyser)
 
 if __name__ == "__main__":
