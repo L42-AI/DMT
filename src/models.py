@@ -20,7 +20,7 @@ class BaseMLModel(torch.nn.Module):
         return torch.cat([embeds, x], dim=-1)
 
 class RandomClassificationBaseline(BaseMLModel):
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_users: int, embed_dim: int = 5, dropout_rate: float = 0.5):
+    def __init__(self, output_dim: int, num_users: int, embed_dim: int = 5):
         super().__init__(num_users, embed_dim)
         self.output_dim = output_dim
 
@@ -39,7 +39,7 @@ class RandomClassificationBaseline(BaseMLModel):
         return rand_scores + (0.0 * embeds.sum())
 
 class RandomRegressionBaseline(BaseMLModel):
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_users: int, embed_dim: int = 5, dropout_rate: float = 0.5):
+    def __init__(self, output_dim: int, num_users: int, embed_dim: int = 5):
         super().__init__(num_users, embed_dim)
         self.output_dim = output_dim
 
