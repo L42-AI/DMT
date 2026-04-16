@@ -54,7 +54,8 @@ class Aggregator:
         agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].sum().reset_index() 
         agg_data['value'] = agg_data['value'].where(agg_data['value'] <= seconds, seconds)
 
-        # TODO: Consider scaling to 0-1 range by dividing by total possible seconds
+        agg_data['value'] = agg_data['value'].clip(lower=0)
+        agg_data['value'] = agg_data['value'] / seconds
         agg_data['value'] = agg_data['value'].round(3)
 
         agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
@@ -127,6 +128,7 @@ class Aggregator:
         agg_data.set_index('time', inplace=True)
         agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].sum().reset_index()
         agg_data['value'] = agg_data['value'].round(0).astype(int)
+        agg_data['value'] = agg_data['value'].apply(lambda x: np.log1p(x) if x > 0 else 0).round(3)
         agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
 
         if inplace:
@@ -256,16 +258,20 @@ class Analyser:
 
         # self._handle_unlikely_outliers()
 
-    def apply_scaling(self):
-        
-        # Variable arousal and valence are -2 to 2 --> scale to -1 to 1 by dividing by 2
-        div_by_2_mask = self.data['variable'].isin(['circumplex.arousal', 'circumplex.valence'])
+    def apply_scaling(self, inplace: bool = False) -> pd.DataFrame:
 
-        self.data.loc[div_by_2_mask, 'value'] = self.data.loc[div_by_2_mask, 'value'] / 2
+        df = self.data.copy()
 
-        # TODO: Consider if good idea to scale target
-        # Variable mood is 1-10 --> scale to 0-1 by applying (value - 1) / 9
-        self.data.loc[self.data['variable'] == 'mood', 'value'] = (self.data.loc[self.data['variable'] == 'mood', 'value'] - 1) / 9
+        div_by_2_mask = df['variable'].isin(['circumplex.arousal', 'circumplex.valence'])
+
+        df.loc[div_by_2_mask, 'value'] = df.loc[div_by_2_mask, 'value'] / 2
+
+        if inplace:
+            self.data.__dict__.update(df.__dict__)
+            return self.data
+        return df
+
+
 
     # === Methods ===
     def compute_gap_duration_for_variables(self, variables: List[str]):
