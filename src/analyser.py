@@ -91,7 +91,7 @@ class Aggregator:
         agg_data['time'] = pd.to_datetime(agg_data['time'])
         agg_data.set_index('time', inplace=True)
         agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].mean().reset_index()
-        agg_data['value'] = agg_data['value'].round(3)
+        agg_data['value'] = agg_data['value'].fillna(0).round(3)
         agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
 
         if inplace:
@@ -144,22 +144,39 @@ class Aggregator:
 
         return agg_data.sort_values(['variable', 'id', 'time'])
 
-    def reported_data(self, inplace: bool = False) -> pd.DataFrame:
+    def reported_data(self, interval: int, unit: str, inplace: bool = False) -> pd.DataFrame:
         """
-        Mood is predicted as a mean per day, so we want to aggregate mood data into daily format. This is a simple mean aggregation per day per ID.
+        Aggregates reported psychological data (mood, arousal, valence).
+        If multiple reports exist in the given time window, it takes the mean.
+        If no reports exist, it leaves a NaN (which is correctly handled by valid-target masking downstream).
         """
+        assert unit in ['M', 'H', 'D'], "Unit must be one of 'M', 'H', or 'D'"
+        
+        if unit == 'M':
+            assert interval in [1, 5, 10, 15, 30, 60], "Interval must be one of [1, 5, 10, 15, 30, 60]"
+        elif unit == 'H':
+            assert interval in [1, 2, 3, 4, 6, 8, 12, 24], "Interval must be one of [1, 2, 3, 4, 6, 8, 12, 24]"
+        else:
+            assert interval in [1, 2, 3, 4, 5, 6, 7], "Interval must be one of [1, 2, 3, 4, 5, 6, 7]"
 
-        agg_data = self.data[self.data['variable'].isin(['mood', 'circumplex.arousal', 'circumplex.valence'])].copy()
+        if unit == 'M': unit = 'min'
+
+        target_vars = ['mood', 'circumplex.arousal', 'circumplex.valence']
+
+        # Isolate the reported data
+        agg_data = self.data[self.data['variable'].isin(target_vars)].copy()
         agg_data['time'] = pd.to_datetime(agg_data['time'])
         agg_data.set_index('time', inplace=True)
-        agg_data = agg_data.groupby(['id', 'variable']).resample('D')['value'].mean().reset_index()
+
+        agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].mean().reset_index()
+        
         agg_data['value'] = agg_data['value'].round(2)
         agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
 
         if inplace:
             new_data = pd.concat(
                 [
-                    self.data[~self.data['variable'].isin(['mood', 'circumplex.arousal', 'circumplex.valence'])],
+                    self.data[~self.data['variable'].isin(target_vars)],
                     agg_data
                 ]
             ).reset_index(drop=True).sort_values(['variable', 'id', 'time'])
