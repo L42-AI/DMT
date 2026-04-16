@@ -7,7 +7,8 @@ from sklearn.model_selection import TimeSeriesSplit
 from features.features_behavioural import add_step_behavioural_features
 from features.feature_pipeline import add_static_temporal_features, add_rolling_history
 
-from .models import SimpleMLP, SimpleGRU
+from models import SimpleMLP, SimpleGRU, RandomClassificationBaseline, RandomRegressionBaseline
+
 __all__ = [
     'TabularClassification',
     'TimeSeriesClassification',
@@ -19,6 +20,8 @@ class BasePipeline:
     def __init__(self, analyser, batch_size=32):
         self.analyser = analyser
         self.batch_size = batch_size
+        self.num_users = None
+        self.input_dim = None
 
     def _prepare_base_data(self) -> pd.DataFrame:
         """ Pivots the dataframe, resets ID to a column, and sets Time as the sole index. """
@@ -41,6 +44,9 @@ class BasePipeline:
         
         X = df.drop(columns=['circumplex.valence', 'circumplex.arousal'], errors='ignore') # TODO: EXAMINE HOW WE CAN USE THESE
         
+        # Track total unique IDs to size the embedding layer correctly
+        self.num_users = int(id_series.max()) + 1
+
         return X, y, id_series
 
     def _clean_data(self, X_df):
@@ -122,6 +128,8 @@ class BasePipeline:
         # 5. Shape into Arrays/Sequences based on the architecture
         X_arr, id_arr = self._process_features(X_df, id_series)
         y_arr, y_dtype = self._process_targets(y_series, id_series)
+
+        self.input_dim = X_arr.shape[-1]
 
         # 6. Global Chronological Split (No data leakage!)
         n = len(X_arr)
@@ -209,12 +217,28 @@ class TabularClassification(TabularPipeline):
         self.num_classes = len(np.unique(binned_y.dropna()))
         return binned_y.values, torch.long
 
-    @staticmethod
-    def create_model(input_dim: int, num_classes: int, hidden_dim: int = 64, dropout_rate: float = 0.5):
-        return SimpleMLP(input_dim, hidden_dim, output_dim=num_classes, dropout_rate=dropout_rate)
+    def build_baseline_model(self):
+        return RandomClassificationBaseline(
+            input_dim=self.input_dim, 
+            hidden_dim=64, 
+            output_dim=self.num_classes, 
+            num_users=self.num_users, 
+            embed_dim=5,
+            dropout_rate=0
+        )
+
+    def build_model(self, hidden_dim: int = 64, embed_dim: int = 5, dropout_rate: float = 0.5):
+        return SimpleMLP(
+            input_dim=self.input_dim, 
+            hidden_dim=hidden_dim, 
+            output_dim=self.num_classes, 
+            num_users=self.num_users, 
+            embed_dim=embed_dim,
+            dropout_rate=dropout_rate
+        )
 
 class TimeSeriesClassification(TimeSeriesPipeline):
-    def __init__(self, analyser, seq_len=7, num_bins=5, batch_size=32):
+    def __init__(self, analyser, seq_len=7, num_bins=5, batch_size=8):
         super().__init__(analyser, seq_len, batch_size)
         self.num_bins = num_bins
         self.num_classes = None
@@ -231,18 +255,50 @@ class TimeSeriesClassification(TimeSeriesPipeline):
                 
         return np.array(seq_y), torch.long
 
-    @staticmethod
-    def create_model(input_dim: int, num_classes: int, hidden_dim: int = 64, dropout_rate: float = 0.5):
-        return SimpleGRU(input_dim, hidden_dim, output_dim=num_classes, dropout_rate=dropout_rate)
+
+    def build_baseline_model(self):        
+        return RandomClassificationBaseline(
+            input_dim=self.input_dim, 
+            hidden_dim=64, 
+            output_dim=self.num_classes, 
+            num_users=self.num_users, 
+            embed_dim=5,
+            dropout_rate=0
+        )
+
+    def build_model(self, hidden_dim: int = 64, embed_dim: int = 5, dropout_rate: float = 0.5):
+        return SimpleGRU(
+            input_dim=self.input_dim, 
+            hidden_dim=hidden_dim, 
+            output_dim=self.num_classes, 
+            num_users=self.num_users, 
+            embed_dim=embed_dim,
+            dropout_rate=dropout_rate
+        )
 
 class TabularRegression(TabularPipeline):
     def _process_targets(self, y_series, id_series):
         return y_series.values[:, np.newaxis], torch.float32
 
-    @staticmethod
-    def create_model(input_dim: int, hidden_dim: int = 64, dropout_rate: float = 0.5):
-        # Regression models output a single continuous value
-        return SimpleMLP(input_dim, hidden_dim, output_dim=1, dropout_rate=dropout_rate)
+    def build_baseline_model(self):
+        return RandomRegressionBaseline(
+            input_dim=self.input_dim, 
+            hidden_dim=64, 
+            output_dim=1, 
+            num_users=self.num_users, 
+            embed_dim=5,
+            dropout_rate=0
+        )
+
+    def build_model(self, hidden_dim: int = 64, embed_dim: int = 5, dropout_rate: float = 0.5):
+        return SimpleMLP(
+            input_dim=self.input_dim, 
+            hidden_dim=hidden_dim, 
+            output_dim=1, 
+            num_users=self.num_users, 
+            embed_dim=embed_dim,
+            dropout_rate=dropout_rate
+        )
 
 class TimeSeriesRegression(TimeSeriesPipeline):
     def _process_targets(self, y_series, id_series):
@@ -254,7 +310,22 @@ class TimeSeriesRegression(TimeSeriesPipeline):
                 
         return np.array(seq_y)[:, np.newaxis], torch.float32
 
-    @staticmethod
-    def create_model(input_dim: int, hidden_dim: int = 64, dropout_rate: float = 0.5):
-        # Regression models output a single continuous value
-        return SimpleGRU(input_dim, hidden_dim, output_dim=1, dropout_rate=dropout_rate)
+    def build_baseline_model(self):
+        return RandomRegressionBaseline(
+            input_dim=self.input_dim, 
+            hidden_dim=64, 
+            output_dim=1, 
+            num_users=self.num_users, 
+            embed_dim=5,
+            dropout_rate=0
+        )
+
+    def build_model(self, hidden_dim: int = 64, embed_dim: int = 5, dropout_rate: float = 0.5):
+        return SimpleGRU(
+            input_dim=self.input_dim, 
+            hidden_dim=hidden_dim, 
+            output_dim=1, 
+            num_users=self.num_users, 
+            embed_dim=embed_dim,
+            dropout_rate=dropout_rate
+        )

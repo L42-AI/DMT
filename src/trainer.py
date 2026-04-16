@@ -54,7 +54,7 @@ class Trainer:
                 id_tensor, X_tensor, y_tensor = [b.to(self.device) for b in batch]
                 
                 self.optimizer.zero_grad()
-                outputs = self.model(X_tensor) 
+                outputs = self.model(id_tensor, X_tensor)
                 loss = self.criterion(outputs, y_tensor)
                 
                 loss.backward()
@@ -62,7 +62,11 @@ class Trainer:
                 self.optimizer.step()
 
                 # Calculate base loss + dynamic task metrics
-                batch_metrics = {'loss': loss.item(), 'acc': (outputs.argmax(dim=1) == y_tensor).float().mean().item()} if self.task_type == 'classification' else {'loss': loss.item(), 'mae': torch.abs(outputs - y_tensor).mean().item()}
+                batch_metrics = {
+                    'loss': loss.item(),
+                    'acc': (outputs.argmax(dim=1) == y_tensor).float().mean().item()
+                } if self.task_type == 'classification' else {'loss': loss.item(), 'mae': torch.abs(outputs - y_tensor).mean().item()}
+                
                 batch_metrics.update(self._calculate_metrics(outputs, y_tensor))
                 train_metrics.update(batch_metrics)
 
@@ -80,10 +84,14 @@ class Trainer:
                     for batch in val_loader:
                         id_tensor, X_tensor, y_tensor = [b.to(self.device) for b in batch]
                         
-                        outputs = self.model(X_tensor)
+                        outputs = self.model(id_tensor, X_tensor)
                         loss = self.criterion(outputs, y_tensor)
                         
-                        batch_metrics = {'loss': loss.item(), 'acc': (outputs.argmax(dim=1) == y_tensor).float().mean().item()} if self.task_type == 'classification' else {'loss': loss.item(), 'mae': torch.abs(outputs - y_tensor).mean().item()}
+                        batch_metrics = {
+                            'loss': loss.item(),
+                            'acc': (outputs.argmax(dim=1) == y_tensor).float().mean().item()
+                        } if self.task_type == 'classification' else {'loss': loss.item(), 'mae': torch.abs(outputs - y_tensor).mean().item()}
+                        
                         batch_metrics.update(self._calculate_metrics(outputs, y_tensor))
                         val_metrics.update(batch_metrics)
                         
