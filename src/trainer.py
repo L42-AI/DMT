@@ -34,7 +34,7 @@ class Trainer:
         metrics = MetricAccumulator()
         
         for batch in dataloader:
-            id_tensor, X_tensor, y_tensor = [b.to(self.device) for b in batch]
+            id_tensor, X_tensor, y_tensor, *_ = [b.to(self.device) for b in batch]
             
             self.optimizer.zero_grad()
             outputs = self.model(id_tensor, X_tensor)
@@ -55,7 +55,7 @@ class Trainer:
         
         with torch.no_grad():
             for batch in dataloader:
-                id_tensor, X_tensor, y_tensor = [b.to(self.device) for b in batch]
+                id_tensor, X_tensor, y_tensor, *_ = [b.to(self.device) for b in batch]
                 
                 outputs = self.model(id_tensor, X_tensor)
                 loss = self.criterion(outputs, y_tensor)
