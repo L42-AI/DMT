@@ -8,7 +8,7 @@ from scipy import stats
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler
 
-from consts import APPCAT_VARS, USER_VARS, SENSOR_VARS, VAR_NAMES_ORDER
+from consts import APPCAT_VARS, USER_VARS, SENSOR_VARS, VAR_NAMES_ORDER, SRC_DIR
 
 import helpers as _helpers
 from CATSI.custom_utils import catsi_impute
@@ -412,7 +412,7 @@ class Analyser:
         
         if catsi:
             # Save for CATSI
-            dir = Path('src/data/catsi')
+            dir = SRC_DIR / "data" / "catsi"
             dir.mkdir(exist_ok=True, parents=True)
 
             for id, wide_data in ind_wides.items():

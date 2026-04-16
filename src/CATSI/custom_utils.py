@@ -9,6 +9,8 @@ import pickle
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
+from consts import SRC_DIR
+
 from .custom_model import CATSI
 from .custom_main import fit
 
@@ -381,7 +383,7 @@ def catsi_impute(
 
 if __name__=="__main__":
     
-    data_dir = Path("src/data/catsi")
+    data_dir = SRC_DIR / "data" / "catsi"
     result = catsi_impute(data_dir, epochs=100, reload_raw=True)
     # print(result.head(20))
     # print(result.shape)
