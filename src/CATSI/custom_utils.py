@@ -81,24 +81,24 @@ def load_raw_data(data_dir):
         
         orig_data_values = pd_data.values
 
-        print(f"Diagnostics for id {idx}")
+        # print(f"Diagnostics for id {idx}")
 
         # Date-time values, to be trimmed and not used
         time_stamps = orig_data_values[:, 0]
-        print(f"Datetimes:")
-        print(time_stamps.shape)
+        # print(f"Datetimes:")
+        # print(time_stamps.shape)
 
         
         # Distances from timestep 0, to be trimmed and used
         time_distances = orig_data_values[:, 1]
-        print(f"Time distances:")
-        print(time_distances.shape)
+        # print(f"Time distances:")
+        # print(time_distances.shape)
 
 
         # Individual data
         values = pd_data.iloc[:, 2:].values
-        print(f"Data value shape:")
-        print(values.shape)
+        # print(f"Data value shape:")
+        # print(values.shape)
 
         # Trimming
         for t in range(values.shape[0]):
@@ -125,8 +125,8 @@ def load_raw_data(data_dir):
 
         observed_mask = (~missing_flag).astype(float)
         delta = construct_delta_matrix(values, time_distances, observed_mask)
-        print('delta matrix shape')
-        print(delta.shape)
+        # print('delta matrix shape')
+        # print(delta.shape)
         
         return {
             'pt_with_na': values,
@@ -233,7 +233,7 @@ def build_data_loader(dataset,
             [torch.from_numpy(np.asarray(x['time_stamps'], dtype=np.float32)) for x in batch_data],
             batch_first=True,
         ).to(device)
-        print(f'time_stamps shape: {data_dict['time_stamps'].shape}')
+        # print(f'time_stamps shape: {data_dict['time_stamps'].shape}')
 
         data_dict['lengths'] = lengths.to(device)
         data_dict['pids'] = pids
@@ -376,7 +376,6 @@ def catsi_impute(
         .sort_values(['id', 'variable', 'time'])
         .reset_index(drop=True)
     )
-    print(imputed_long)
     return imputed_long
 
 
@@ -384,5 +383,5 @@ if __name__=="__main__":
     
     data_dir = Path("src/data/catsi")
     result = catsi_impute(data_dir, epochs=100, reload_raw=True)
-    print(result.head(20))
-    print(result.shape)
+    # print(result.head(20))
+    # print(result.shape)
