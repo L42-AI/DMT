@@ -10,6 +10,11 @@ from visualiser import Visualiser
 from analyser import Analyser
 import data as _data
 
+INTERVAL = 1
+UNIT = 'H'
+
+SEQ_LEN = 24
+
 def prepare_data() -> Analyser:
     print("--- Loading and Processing Raw Data ---")
     
@@ -20,10 +25,10 @@ def prepare_data() -> Analyser:
 
     # Clean and aggregate
     analyser.process_outliers()
-    analyser.aggregate.time_data(interval=1, unit='H', inplace=True)
-    analyser.aggregate.activity(interval=1, unit='H', inplace=True)
-    analyser.aggregate.communication_events(interval=1, unit='H', inplace=True)
-    analyser.aggregate.reported_data(interval=1, unit='H', inplace=True)
+    analyser.aggregate.time_data(interval=INTERVAL, unit=UNIT, inplace=True)
+    analyser.aggregate.activity(interval=INTERVAL, unit=UNIT, inplace=True)
+    analyser.aggregate.communication_events(interval=INTERVAL, unit=UNIT, inplace=True)
+    analyser.aggregate.reported_data(interval=INTERVAL, unit=UNIT, inplace=True)
 
     analyser.apply_scaling(inplace=True) # Scale before imputation to prevent data leakage from imputed values
 
@@ -112,7 +117,7 @@ def evaluate_daily_assignment_loss(model, dataloader, device='cpu'):
 def train_classification_model(analyser):
     print("\n--- Initializing Machine Learning Pipeline ---")
     
-    pipeline = TimeSeriesClassification(analyser, seq_len=200, num_bins=5, batch_size=16)
+    pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_bins=5, batch_size=16)
     train_loader, val_loader, test_loader = pipeline.get_dataloaders()
 
     # FIX: Unpack 4 items now since our dataloader yields (IDs, X, y, Time)
@@ -122,10 +127,10 @@ def train_classification_model(analyser):
     print(f"Detected {num_features} input features.")
 
     # 2. Instantiate the Model
-    model = pipeline.build_model(hidden_dim=16, embed_dim=5, dropout_rate=0.5)
+    model = pipeline.build_model(hidden_dim=64, embed_dim=6, dropout_rate=0.5)
 
     # 3. Define Optimizer and Loss
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-3)
     criterion = torch.nn.CrossEntropyLoss()
 
     # 4. Train the Model
@@ -141,7 +146,7 @@ def train_classification_model(analyser):
 def train_regression_model(analyser):
     print("\n--- Initializing Machine Learning Pipeline ---")
     
-    pipeline = TimeSeriesRegression(analyser, seq_len=200, batch_size=16)
+    pipeline = TimeSeriesRegression(analyser, seq_len=SEQ_LEN, batch_size=16)
     train_loader, val_loader, test_loader = pipeline.get_dataloaders()
 
     # FIX: Unpack 4 items now
@@ -151,10 +156,10 @@ def train_regression_model(analyser):
     print(f"Detected {num_features} input features.")
 
     # 2. Instantiate the Model
-    model = pipeline.build_model(hidden_dim=16, embed_dim=5, dropout_rate=0.2)
+    model = pipeline.build_model(hidden_dim=64, embed_dim=6, dropout_rate=0.5)
 
     # 3. Define Optimizer and Loss
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-3)
     criterion = torch.nn.MSELoss()
 
     # 4. Train the Model on Hourly Data
