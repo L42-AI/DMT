@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import TensorDataset, DataLoader
+from sklearn.model_selection import TimeSeriesSplit
+
 
 __all__ = [
     'TabularClassification',
@@ -36,6 +38,52 @@ class BasePipeline:
     def _process_targets(self, y_series):
         raise NotImplementedError("Subclasses must define how to shape targets (Regression vs Classification).")
 
+    # --- OPTIONAL OVERRIDE: Walk-Forward Splits for Time Series ---
+    def get_walk_forward_loaders(self, n_splits=5, gap=2, test_ration=0.15):
+        """
+        Creates walk-forward splits for time series data. Output is a list of (train_loader, val_loader) tuples for each fold, plus a separate test_loader.
+        The test set is the last `test_ratio` portion of the data, and is not included in the walk-forward splits. 
+        The walk-forward splits are created on the remaining train+val set.
+
+        args:
+        -----
+            - n_splits: Number of walk-forward splits to create on the train+val set.
+            - gap: Number of time steps to exclude between train and val sets in each fold to prevent leakage.
+            - test_ratio: Proportion of the data to reserve as a final test set (default 15%).
+        """
+
+        def make_loader(X_slice, y_slice, id_slice, shuffle):
+            dataset = TensorDataset(
+                torch.tensor(id_slice.copy(), dtype=torch.long),
+                torch.tensor(X_slice.copy(), dtype=torch.float32),
+                torch.tensor(y_slice.copy(), dtype=y_dtype)
+            )
+            return DataLoader(dataset, batch_size=self.batch_size, shuffle=shuffle, drop_last=True)
+        
+        X_df, y_series, id_series = self._prepare_base_data()
+        
+        X_arr, id_arr = self._process_features(X_df, id_series)
+        y_arr, y_dtype = self._process_targets(y_series, id_series)
+   
+        # Split into train+val and test based on time (last 15% for testing)
+        n = len(X_arr)
+        test_start = int(n * (1 - test_ration))
+        X_train_val, y_train_val, id_train_val = X_arr[:test_start], y_arr[:test_start], id_arr[:test_start]
+        X_test, y_test, id_test = X_arr[test_start:], y_arr[test_start:], id_arr[test_start:]
+
+        # Create walk-forward splits on the train+val set
+        tss = TimeSeriesSplit(n_splits=n_splits, gap=gap)
+        folds = []
+        for train_index, val_index_index in tss.split(X_arr):
+            train_loader = make_loader(X_train_val[train_index], y_train_val[train_index], id_train_val[train_index], shuffle=True)
+            val_loader = make_loader(X_train_val[val_index_index], y_train_val[val_index_index], id_train_val[val_index_index], shuffle=False)
+            folds.append((train_loader, val_loader))
+        test_loader = make_loader(X_test, y_test, id_test, shuffle=False)
+
+        print(f"\n--- {self.__class__.__name__} Ready ---")
+
+        return folds, test_loader 
+    
     # --- THE TEMPLATE METHOD ---
     def get_dataloaders(self, train_ratio=0.7, val_ratio=0.15):
         X_df, y_series, id_series = self._prepare_base_data()
@@ -56,6 +104,7 @@ class BasePipeline:
             )
             return DataLoader(dataset, batch_size=self.batch_size, shuffle=shuffle, drop_last=True)
 
+        tss = TimeSeriesSplit(n_splits=5, gap=5)
         train_loader = make_loader(X_arr[:train_end], y_arr[:train_end], id_arr[:train_end], shuffle=True)
         val_loader = make_loader(X_arr[train_end:val_end], y_arr[train_end:val_end], id_arr[train_end:val_end], shuffle=False)
         test_loader = make_loader(X_arr[val_end:], y_arr[val_end:], id_arr[val_end:], shuffle=False)
