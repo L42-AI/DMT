@@ -74,7 +74,7 @@ class BasePipeline:
         # Create walk-forward splits on the train+val set
         tss = TimeSeriesSplit(n_splits=n_splits, gap=gap)
         folds = []
-        for train_index, val_index_index in tss.split(X_arr):
+        for train_index, val_index_index in tss.split(X_train_val):
             train_loader = make_loader(X_train_val[train_index], y_train_val[train_index], id_train_val[train_index], shuffle=True)
             val_loader = make_loader(X_train_val[val_index_index], y_train_val[val_index_index], id_train_val[val_index_index], shuffle=False)
             folds.append((train_loader, val_loader))
