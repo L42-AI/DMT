@@ -291,7 +291,7 @@ class TimeSeriesPipeline(BasePipeline):
             dropout_rate=dropout_rate
         )
 
-# --- MIXINS & LEAF CLASSES ---
+
 class ClassificationPipelineMixin:
     CLASSIFICATION = True
     num_users: int
@@ -318,6 +318,7 @@ class RegressionPipelineMixin:
             num_users=self.num_users, 
             embed_dim=5,
         )
+
 
 class TabularClassification(ClassificationPipelineMixin, TabularPipeline):
     pass

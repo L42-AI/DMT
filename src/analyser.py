@@ -358,49 +358,6 @@ class Analyser:
                                            )
         print(design_mat.head())
 
-
-    def aggregate_daily(self, save: bool = False, show: bool = False):
-        # In progress
-        """ Aggregate all data into daily format. Aggregation method is mean for user-entered scores, and sum for 
-        all other variables. Rows are instances, here defined as combination of (id, date). Columns are variables/
-        attributes.
-
-        Args:
-            save (bool, optional): Whether to save as csv. Defaults to False.
-            show (bool, optional): Whether to print a header (10 rows). Defaults to False.
-        """
-        
-        # want a table of aggregate values for every combination of id, date, and variables
-        sum_mask = self.data['variable'].isin(self.sensor_vars)
-        mean_mask = self.data['variable'].isin(self.scored_vars)
-        daily_data_sum = self.data[sum_mask].groupby(['id', 'date', 'variable'])['value'].sum().unstack()
-        daily_data_mean = self.data[mean_mask].groupby(['id', 'date', 'variable'])['value'].mean().unstack()
-        daily_data = pd.concat([daily_data_mean, daily_data_sum], axis = 1)
-        
-        # Create multi-index of ids and full range of dates 
-        unique_ids = self.data['id'].unique()
-        multi_index = pd.MultiIndex.from_product([unique_ids, _helpers.total_time_range(self.data['time'])], names=['id', 'date'])
-
-        # Reindex the data
-        daily_data = daily_data.reindex(multi_index).reset_index()
-
-        daily_data = daily_data.melt(
-            id_vars = ['id', 'date'],
-            var_name = 'variable',
-            value_name = 'value' 
-        )
-
-
-        if save:
-            dir = Path('results/data')
-            dir.mkdir(exist_ok=True, parents=True)
-            daily_data.to_csv(dir / "daily_format.csv")
-
-        if show:
-            print(daily_data.head(10))
-        
-        self.daily_data = daily_data
-
     def impute(self, delete: bool = True, catsi: bool = False, epochs: int = 100):
 
         # sensor-data imputation

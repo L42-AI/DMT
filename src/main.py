@@ -27,7 +27,6 @@ def main():
     # === Daily Data Analysis ===
 
     # Show correlations between all variables
-    # visualiser.load(analyser.data, analyser.daily_data)
 
     # visualiser.individual_outlier_plot(save=True)
     # visualiser.var_correlations_per_id(save=True)

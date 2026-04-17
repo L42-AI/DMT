@@ -238,8 +238,8 @@ def walk_forward_train(analyser):
 
 def main():
     analyser = prepare_data()
-    walk_forward_train(analyser)
-    # train_regression_model(analyser)
+    # walk_forward_train(analyser)
+    train_regression_model(analyser)
 
 if __name__ == "__main__":
     main()

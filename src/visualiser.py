@@ -11,13 +11,7 @@ import helpers as _helpers
 
 class Visualiser:
     def __init__(self, data: pd.DataFrame):
-        self.load(data)
-
-    def load(self, data: pd.DataFrame, daily_data: pd.DataFrame = None):
         self.data = data
-        self.daily_data = daily_data
-        if 'date' not in self.data.columns:
-            self.data['date'] = self.data['time'].dt.date
 
     def descriptives(self):
         ''' Descriptive statistics for all variables of the dataset '''
@@ -32,7 +26,7 @@ class Visualiser:
         Args:
             save (bool, optional): Toggle saving vs showing plots. Defaults to showing(False).
         """
-        dir = Path("results/eda")
+        dir = Path("plots/eda")
         stats = self.data.groupby(['id', 'variable'])['value'].agg(['mean', 'std']).reset_index()
         means = stats.pivot(index = 'id', columns='variable', values='mean')        
         z_scores = (means - means.mean()) / means.std()
@@ -53,7 +47,7 @@ class Visualiser:
             date (bool, optional): Whether you want to visualize NAs in dates instead of variables. Defaults to False.
             save (bool, optional): Whether you want to save instead of plot. Defaults to False.
         """
-        dir = SRC_DIR / "results" / "eda"
+        dir = SRC_DIR / "plots" / "eda"
 
         col = 'date' if date else 'variable'
         target_col = 'time' if date else 'value'
@@ -94,7 +88,7 @@ class Visualiser:
         duration_in_hours = self.data.loc[self.data['gap_duration'] > pd.Timedelta(0),'gap_duration'].dt.total_seconds() / 3600
         plt.hist(duration_in_hours)
         if save:
-            plt.savefig("results/eda/na_distribution.png")
+            plt.savefig("plots/eda/na_distribution.png")
             plt.close()
         else:
             plt.show()
@@ -111,7 +105,7 @@ class Visualiser:
         plt.title('Number of Datapoints per ID')
         plt.xticks(rotation=90, fontsize=10)  # Rotate x-axis labels for better readability
         if save:
-            plt.savefig("results/eda/datapoint_counts.png")
+            plt.savefig("plots/eda/datapoint_counts.png")
             plt.close()
         else:
             plt.show()
@@ -130,7 +124,7 @@ class Visualiser:
             plt.grid(True, linestyle='--', alpha=0.7)
             plt.tight_layout()
             if save:
-                plt.savefig(f"results/eda/timestamp_distribution_{id_val}.png")
+                plt.savefig(f"plots/eda/timestamp_distribution_{id_val}.png")
                 plt.close()
             else:
                 plt.show()
@@ -149,7 +143,7 @@ class Visualiser:
             plt.grid(True, linestyle='--', alpha=0.7)
             plt.tight_layout()
             if save:
-                plt.savefig(f"results/eda/timestamp_distribution_{var_val}.png")
+                plt.savefig(f"plots/eda/timestamp_distribution_{var_val}.png")
                 plt.close()
             else:
                 plt.show()
@@ -163,7 +157,7 @@ class Visualiser:
             save (bool, optional): Toggle saving vs showing plots. Defaults to showing(False).
         """
         # Path for saving
-        dir = Path('results/eda/barcode')
+        dir = Path('plots/eda/barcode')
 
         grouped = self.data.groupby("id")
         for id, group in grouped:
@@ -198,7 +192,7 @@ class Visualiser:
         """
 
         # path for saving
-        dir = Path("results/eda/multi_barcode")
+        dir = Path("plots/eda/multi_barcode")
 
         grouped = self.data.groupby('variable')
         for var, group in grouped:
@@ -247,7 +241,7 @@ class Visualiser:
             plt.grid(True, linestyle='--', alpha=0.7)
             plt.tight_layout()
             if save:
-                plt.savefig(f"results/eda/variable_distribution_{id_val}.png")
+                plt.savefig(f"plots/eda/variable_distribution_{id_val}.png")
                 plt.close()
             else:
                 plt.show()
@@ -289,7 +283,7 @@ class Visualiser:
             
             plt.tight_layout()
             if save:
-                plt.savefig(f'results/eda/value_distribution_{var_val}.png')
+                plt.savefig(f'plots/eda/value_distribution_{var_val}.png')
                 plt.close()
             else:
                 plt.show()
@@ -297,10 +291,10 @@ class Visualiser:
     # --- Visualisation of daily data ---
     def var_correlations_per_id(self, save: bool = False):
 
-        dir = Path("results/eda/correlation_matrices")
+        dir = Path("plots/eda/correlation_matrices")
         dir.mkdir(exist_ok=True, parents=True)
 
-        ind_data = self.daily_data.groupby('id')
+        ind_data = self.data.groupby('id')
 
         for id, ind in ind_data:
             corr_matrix = _helpers.wide_format_daily(data = ind).corr()
