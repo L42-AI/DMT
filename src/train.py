@@ -216,6 +216,10 @@ def walk_forward_train(analyser, tabular=False):
     trained_model = None  # To keep track of the most recently trained model for final evaluation
 
     for fold_idx, (train_loader, val_loader) in enumerate(folds):
+        # DESIGN CHOICE: Re-instantiate model/optimizer for every fold.
+        # This ensures each fold is an independent test of the training strategy. For model
+        # validation and hyperparameter tuning. When training final model, we should use the 
+        # same model instance and just keep training it on new data. (maybe in new function)
         print(f"\n" + "="*30)
         print(f"🚀 STARTING FOLD {fold_idx + 1}/{len(folds)}")
         print(f"="*30)
@@ -234,8 +238,6 @@ def walk_forward_train(analyser, tabular=False):
             print(f"Fold {fold_idx + 1} Validation Accuracy: {val_acc:.2%}")
             trained_model = model  # Update the most recently trained model for final test evaluation
         else:
-            # DESIGN CHOICE: Re-instantiate model/optimizer for every fold.
-            # This ensures each fold is an independent test of the training strategy.
             model = pipeline.build_model(hidden_dim=32, embed_dim=5, dropout_rate=0.5)
             
             optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
@@ -265,7 +267,7 @@ def walk_forward_train(analyser, tabular=False):
         test_acc = (test_preds == y_test).mean()
         test_metrics = {'acc': test_acc}
     else:
-        test_metrics = trainer._validate_epoch(test_loader)
+        test_metrics = trained_model._validate_epoch(test_loader)
     
     avg_fold_acc = sum(f['acc'] for f in fold_results) / len(fold_results)
     
