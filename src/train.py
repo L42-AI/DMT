@@ -1,19 +1,32 @@
 import torch
-
+import numpy as np
 import pandas as pd
+
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-
-from pipeline import TimeSeriesClassification, TimeSeriesRegression
+from pipeline import TimeSeriesClassification, TimeSeriesRegression, TabularClassification, TabularRegression
 from trainer import Trainer
-
 from visualiser import Visualiser
 from analyser import Analyser
+
 import data as _data
 
 INTERVAL = 1
 UNIT = 'H'
 
 SEQ_LEN = 24
+def _extract_numpy_from_loader(loader):
+    """Helper function to convert a DataLoader back to NumPy arrays."""
+    all_X, all_y = [], []
+    for _, X_tensor, y_tensor, *_ in loader:
+        all_X.append(X_tensor.cpu().numpy())
+        all_y.append(y_tensor.cpu().numpy())
+    
+    X_arr = np.concatenate(all_X)
+    # Reshape if data is sequential, as XGBoost expects 2D input
+    if X_arr.ndim > 2:
+        X_arr = X_arr.reshape(X_arr.shape[0], -1)
+        
+    return X_arr, np.concatenate(all_y)
 
 def prepare_data() -> Analyser:
     print("--- Loading and Processing Raw Data ---")
@@ -182,14 +195,17 @@ def train_regression_model(analyser):
     print(f"Saved exact daily predictions to: '{save_path}'")
 
 
-def walk_forward_train(analyser):
+def walk_forward_train(analyser, tabular=False):
     """ 
     Train a model using walk-forward validation. 
     Simulates real-world scenario of training on past data and validating on future data.
     """
     # 1. Setup Pipeline
     # Using a shorter seq_len as discussed to preserve data points
-    pipeline = TimeSeriesClassification(analyser, seq_len=24, num_bins=5, batch_size=16)
+    if tabular:
+        pipeline = TabularClassification(analyser, lookahead = 1, num_bins=5, batch_size=16)
+    else:
+        pipeline = TimeSeriesClassification(analyser, seq_len=24, num_bins=5, batch_size=16)
     
     # get_walk_forward_loaders returns (folds, test_loader)
     # Each fold is a tuple: (train_loader, val_loader)
@@ -197,37 +213,61 @@ def walk_forward_train(analyser):
 
     # 2. Walk-Forward Loop
     fold_results = []
+    trained_model = None  # To keep track of the most recently trained model for final evaluation
 
     for fold_idx, (train_loader, val_loader) in enumerate(folds):
+        # DESIGN CHOICE: Re-instantiate model/optimizer for every fold.
+        # This ensures each fold is an independent test of the training strategy. For model
+        # validation and hyperparameter tuning. When training final model, we should use the 
+        # same model instance and just keep training it on new data. (maybe in new function)
         print(f"\n" + "="*30)
         print(f"🚀 STARTING FOLD {fold_idx + 1}/{len(folds)}")
         print(f"="*30)
-
-        # DESIGN CHOICE: Re-instantiate model/optimizer for every fold.
-        # This ensures each fold is an independent test of the training strategy.
-        model = pipeline.build_model(hidden_dim=32, embed_dim=5, dropout_rate=0.5)
         
-        optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
-        criterion = torch.nn.CrossEntropyLoss()
+        if tabular:
+            model = pipeline.build_xgboost_model()
+            X_train, y_train = _extract_numpy_from_loader(train_loader)
+            X_val, y_val = _extract_numpy_from_loader(val_loader)
+            print(f"Fitting XGBoost on Fold {X_train.shape[0]} training samples...")
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=10, verbose=False)
+            
+            # Evaluate on validation set
+            val_preds = model.predict(X_val)
+            val_acc = (val_preds == y_val).mean()
+            fold_results.append({'acc': val_acc})
+            print(f"Fold {fold_idx + 1} Validation Accuracy: {val_acc:.2%}")
+            trained_model = model  # Update the most recently trained model for final test evaluation
+        else:
+            model = pipeline.build_model(hidden_dim=32, embed_dim=5, dropout_rate=0.5)
+            
+            optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+            criterion = torch.nn.CrossEntropyLoss()
 
-        # Initialize Trainer
-        trainer = Trainer(model, optimizer, criterion, task_type='classification')
+            # Initialize Trainer
+            trainer = Trainer(model, optimizer, criterion, task_type='classification')
 
-        # Fit on this fold's specific data
-        trainer.fit(train_loader=train_loader, val_loader=val_loader, num_epochs=50)
-        
-        # Optionally: Evaluate on val_loader one last time to save results
-        val_metrics = trainer._validate_epoch(val_loader)
-        fold_results.append(val_metrics)
+            # Fit on this fold's specific data
+            trainer.fit(train_loader=train_loader, val_loader=val_loader, num_epochs=50)
+            
+            # Optionally: Evaluate on val_loader one last time to save results
+            val_metrics = trainer._validate_epoch(val_loader)
+            fold_results.append(val_metrics)
+            trained_model = trainer 
 
     # 3. Final Evaluation on the held-out Test Set
+    # We use the trainer from the VERY LAST fold to evaluate the test set,
+    # as it has been trained on the most recent data.
     print("\n" + "X"*40)
     print("      FINAL WALK-FORWARD TEST")
     print("X"*40)
-    
-    # We use the trainer from the VERY LAST fold to evaluate the test set,
-    # as it has been trained on the most recent data.
-    test_metrics = trainer._validate_epoch(test_loader)
+
+    if tabular:
+        X_test, y_test = _extract_numpy_from_loader(test_loader)
+        test_preds = trained_model.predict(X_test)
+        test_acc = (test_preds == y_test).mean()
+        test_metrics = {'acc': test_acc}
+    else:
+        test_metrics = trained_model._validate_epoch(test_loader)
     
     avg_fold_acc = sum(f['acc'] for f in fold_results) / len(fold_results)
     

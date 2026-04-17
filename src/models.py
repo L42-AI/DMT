@@ -1,4 +1,5 @@
 import torch
+from xgboost import XGBClassifier
 
 class BaseMLModel(torch.nn.Module):
     """ Base class that handles User ID Embedding logic for all model variants. """
@@ -85,3 +86,16 @@ class SimpleGRU(BaseMLModel):
         last_step_out = out[:, -1, :] 
         last_step_out = self.dropout(last_step_out)
         return self.fc(last_step_out)
+
+class XGBoostClassifierWrapper:
+    def __init__(self, **kwargs):
+        self.model = XGBClassifier(**kwargs)
+
+    def fit(self, X, y):
+        self.model.fit(X, y)
+
+    def predict(self, X):
+        return self.model.predict(X)
+
+    def predict_proba(self, X):
+        return self.model.predict_proba(X)
