@@ -6,7 +6,8 @@ from sklearn.model_selection import TimeSeriesSplit
 from typing import Tuple, List
 from features.features_behavioural import add_step_behavioural_features
 from features.feature_pipeline import add_static_temporal_features, add_rolling_history
-from models import SimpleMLP, SimpleGRU, RandomClassificationBaseline, RandomRegressionBaseline
+from models import SimpleMLP, SimpleGRU, RandomClassificationBaseline, RandomRegressionBaseline, XGBoostClassifierWrapper
+from xgboost import XGBClassifier
 
 class BasePipeline:
     CLASSIFICATION: bool
@@ -232,6 +233,21 @@ class TabularPipeline(BasePipeline):
             embed_dim=embed_dim,
             dropout_rate=dropout_rate
         )
+
+    def build_xgboost_model(self, **kwargs):
+        """Builds an XGBoost classifier with a wrapper."""
+        # Default XGBoost parameters for classification
+        defaults = {
+            'n_estimators': 100,
+            'learning_rate': 0.1,
+            'max_depth': 3,
+            'use_label_encoder': False,
+            'eval_metric': 'mlogloss'
+        }
+        # Override defaults with any user-provided kwargs
+        defaults.update(kwargs)
+        
+        return XGBoostClassifierWrapper(**defaults)
 
 class TimeSeriesPipeline(BasePipeline):
     def __init__(self, analyser, seq_len=7, batch_size=32):
