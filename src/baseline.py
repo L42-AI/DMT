@@ -77,7 +77,7 @@ def parallel_visualize_baseline(analyser, total_runs=100_000):
     model_state = {
         'class': type(model),
         'args': {'output_dim': pipeline.num_classes, 
-                 'num_users': pipeline.num_users},
+                 'num_users': pipeline.num_ids},
         'weights': model.state_dict()
     }
     

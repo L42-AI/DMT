@@ -11,10 +11,22 @@ from analyser import Analyser
 
 import data as _data
 
+# Data hyperparameters
 INTERVAL = 1
 UNIT = 'H'
+CLASSES = 2
 
+# Model hyperparameters
 SEQ_LEN = 24
+BATCH_SIZE = 16
+EMBEDDING_DIM = 6
+HIDDEN_DIM = 64
+DROP_RATE = 0.5
+
+# Training hyperparameters
+LR = 0.001
+WEIGHT_DECAY = 1e-3
+
 def _extract_numpy_from_loader(loader):
     """Helper function to convert a DataLoader back to NumPy arrays."""
     all_X, all_y = [], []
@@ -207,7 +219,7 @@ def evaluate_daily_assignment_loss(model, dataloader, device='cpu'):
 def train_classification_model(analyser):
     print("\n--- Initializing Machine Learning Pipeline ---")
     
-    pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_bins=5, batch_size=16)
+    pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=CLASSES, batch_size=BATCH_SIZE)
     train_loader, val_loader, test_loader = pipeline.get_dataloaders()
 
     # FIX: Unpack 4 items now since our dataloader yields (IDs, X, y, Time)
@@ -217,10 +229,10 @@ def train_classification_model(analyser):
     print(f"Detected {num_features} input features.")
 
     # 2. Instantiate the Model
-    model = pipeline.build_model(hidden_dim=64, embed_dim=6, dropout_rate=0.5)
+    model = pipeline.build_model(hidden_dim=HIDDEN_DIM, embed_dim=EMBEDDING_DIM, dropout_rate=DROP_RATE)
 
     # 3. Define Optimizer and Loss
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-3)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     criterion = torch.nn.CrossEntropyLoss()
 
     # 4. Train the Model
@@ -236,7 +248,7 @@ def train_classification_model(analyser):
 def train_regression_model(analyser):
     print("\n--- Initializing Machine Learning Pipeline ---")
     
-    pipeline = TimeSeriesRegression(analyser, seq_len=SEQ_LEN, batch_size=16)
+    pipeline = TimeSeriesRegression(analyser, seq_len=SEQ_LEN, batch_size=BATCH_SIZE)
     train_loader, val_loader, test_loader = pipeline.get_dataloaders()
 
     # FIX: Unpack 4 items now
@@ -246,10 +258,10 @@ def train_regression_model(analyser):
     print(f"Detected {num_features} input features.")
 
     # 2. Instantiate the Model
-    model = pipeline.build_model(hidden_dim=64, embed_dim=6, dropout_rate=0.5)
+    model = pipeline.build_model(hidden_dim=HIDDEN_DIM, embed_dim=EMBEDDING_DIM, dropout_rate=DROP_RATE)
 
     # 3. Define Optimizer and Loss
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-3)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     criterion = torch.nn.MSELoss()
 
     # 4. Train the Model on Hourly Data
@@ -284,9 +296,9 @@ def walk_forward_train(analyser, tabular=False):
     # 1. Setup Pipeline
     # Using a shorter seq_len as discussed to preserve data points
     if tabular:
-        pipeline = TabularClassification(analyser, lookahead = 1, num_bins=2, batch_size=16)
+        pipeline = TabularClassification(analyser, num_classes=CLASSES, batch_size=BATCH_SIZE)
     else:
-        pipeline = TimeSeriesClassification(analyser, seq_len=24, num_bins=2, batch_size=16)
+        pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=CLASSES, batch_size=BATCH_SIZE)
     
     # get_walk_forward_loaders returns (folds, test_loader)
     # if tabular, folds is a list of dicts with 'train' and 'val' keys containing NumPy arrays
@@ -334,8 +346,8 @@ def walk_forward_train(analyser, tabular=False):
             train_loader, val_loader = fold_content
             
             # Build and train the PyTorch model on the current fold
-            model = pipeline.build_model(hidden_dim=32, embed_dim=5, dropout_rate=0.5)
-            optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+            model = pipeline.build_model(hidden_dim=HIDDEN_DIM, embed_dim=EMBEDDING_DIM, dropout_rate=DROP_RATE)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
             criterion = torch.nn.CrossEntropyLoss()
             trainer = Trainer(model, optimizer, criterion, task_type='classification')
             trainer.fit(train_loader=train_loader, val_loader=val_loader, num_epochs=50)
@@ -370,7 +382,7 @@ def walk_forward_train(analyser, tabular=False):
 
 def main():
     analyser = prepare_data()
-    walk_forward_train(analyser, tabular=False)
+    train_classification_model(analyser)
     # train_regression_model(analyser)
 
 if __name__ == "__main__":

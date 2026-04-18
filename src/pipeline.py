@@ -12,11 +12,13 @@ from analyser import Analyser
 
 class BasePipeline:
     CLASSIFICATION: bool
+    num_classes: int
+    num_ids: int
     
     def __init__(self, analyser, batch_size=32):
         self.analyser = analyser
         self.batch_size = batch_size
-        self.num_users = None
+        self.num_ids = None
         self.input_dim = None
 
     def _prepare_base_data(self) -> pd.DataFrame:
@@ -32,7 +34,7 @@ class BasePipeline:
     def _split_x_y_id(self, df: pd.DataFrame):
         """ Splits the enriched dataframe into Features (X), Targets (y), and IDs. """
         id_series = df.pop('id')
-        self.num_users = id_series.nunique()
+        self.num_ids = id_series.nunique()
         
         y = df.pop('mood')
         X = df.drop(columns=['circumplex.valence', 'circumplex.arousal'], errors='ignore')
@@ -64,6 +66,15 @@ class BasePipeline:
     
     def _build_tensors(self, X_df, y_series, id_series):
         raise NotImplementedError()
+
+    def process_targets(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
+        if self.CLASSIFICATION:
+            bins = np.linspace(1.0, 10.0, self.num_classes + 1)
+            y_series = pd.cut(y_series, bins=bins, labels=False, include_lowest=True)
+            y_dtype = torch.long
+        else:
+            y_dtype = torch.float32
+        return y_series, y_dtype
 
     def get_walk_forward_loaders(
             self, 
@@ -312,13 +323,7 @@ class TabularPipeline(BasePipeline):
         id_valid = id_series[valid_mask]
         time_valid = time_future[valid_mask]
         
-        # 4. Handle Classification Binning
-        if self.CLASSIFICATION:
-            y_valid = pd.qcut(y_valid, q=self.num_bins, labels=False, duplicates='drop')
-            self.num_classes = len(np.unique(y_valid.dropna()))
-            y_dtype = torch.long
-        else:
-            y_dtype = torch.float32
+        y_series, y_dtype = self.process_targets(y_series)
 
         # 5. Convert to Numpy arrays
         X_arr = np.nan_to_num(X_valid.values, nan=0.0)
@@ -339,7 +344,7 @@ class TabularPipeline(BasePipeline):
             input_dim=self.input_dim, 
             hidden_dim=hidden_dim, 
             output_dim=self.num_classes, 
-            num_users=self.num_users, 
+            num_users=self.num_ids, 
             embed_dim=embed_dim,
             dropout_rate=dropout_rate
         )
@@ -381,12 +386,7 @@ class TimeSeriesPipeline(BasePipeline):
         return df 
     
     def _build_tensors(self, X_df, y_series, id_series):
-        if self.CLASSIFICATION:
-            y_series = pd.qcut(y_series, q=self.num_bins, labels=False, duplicates='drop')
-            self.num_classes = len(np.unique(y_series.dropna()))
-            y_dtype = torch.long
-        else:
-            y_dtype = torch.float32
+        y_series, y_dtype = self.process_targets(y_series)
 
         seq_X, seq_y, seq_ids, seq_times = [], [], [], []
         time_index = y_series.index
@@ -422,7 +422,7 @@ class TimeSeriesPipeline(BasePipeline):
             input_dim=self.input_dim, 
             hidden_dim=hidden_dim, 
             output_dim=self.num_classes, 
-            num_users=self.num_users, 
+            num_users=self.num_ids, 
             embed_dim=embed_dim,
             dropout_rate=dropout_rate
         )
@@ -430,28 +430,25 @@ class TimeSeriesPipeline(BasePipeline):
 
 class ClassificationPipelineMixin:
     CLASSIFICATION = True
-    num_users: int
-    def __init__(self, *args, num_bins=5, **kwargs):
+    def __init__(self, *args, num_classes=5, **kwargs):
         super().__init__(*args, **kwargs)
-        self.num_bins = num_bins
-        self.num_classes = None
+        self.num_classes = num_classes
 
     def build_baseline_model(self):
         return RandomClassificationBaseline(
             output_dim=self.num_classes, 
-            num_users=self.num_users, 
+            num_users=self.num_ids, 
             embed_dim=5,
         )
     
 class RegressionPipelineMixin:
     CLASSIFICATION = False
-    num_users: int
     num_classes = 1
 
     def build_baseline_model(self):
         return RandomRegressionBaseline(
             output_dim=self.num_classes, 
-            num_users=self.num_users, 
+            num_users=self.num_ids, 
             embed_dim=5,
         )
 
