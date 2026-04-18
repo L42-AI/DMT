@@ -3,10 +3,10 @@ from xgboost import XGBClassifier
 
 class BaseMLModel(torch.nn.Module):
     """ Base class that handles User ID Embedding logic for all model variants. """
-    def __init__(self, num_users: int, embed_dim: int):
+    def __init__(self, num_ids: int, embed_dim: int):
         super().__init__()
         # Lookup table for user embeddings. 
-        self.user_embedding = torch.nn.Embedding(num_embeddings=num_users, embedding_dim=embed_dim)
+        self.user_embedding = torch.nn.Embedding(num_embeddings=num_ids, embedding_dim=embed_dim)
 
     def inject_embeddings(self, ids: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         """ Looks up ID embeddings and concatenates them to the feature tensor. """
@@ -21,8 +21,8 @@ class BaseMLModel(torch.nn.Module):
         return torch.cat([embeds, x], dim=-1)
 
 class RandomClassificationBaseline(BaseMLModel):
-    def __init__(self, output_dim: int, num_users: int, embed_dim: int = 5):
-        super().__init__(num_users, embed_dim)
+    def __init__(self, output_dim: int, num_ids: int, embed_dim: int = 5):
+        super().__init__(num_ids, embed_dim)
         self.output_dim = output_dim
 
     def forward(self, ids, x):
@@ -40,8 +40,8 @@ class RandomClassificationBaseline(BaseMLModel):
         return rand_scores + (0.0 * embeds.sum())
 
 class RandomRegressionBaseline(BaseMLModel):
-    def __init__(self, output_dim: int, num_users: int, embed_dim: int = 5):
-        super().__init__(num_users, embed_dim)
+    def __init__(self, output_dim: int, num_ids: int, embed_dim: int = 5):
+        super().__init__(num_ids, embed_dim)
         self.output_dim = output_dim
 
     def forward(self, ids, x):
@@ -59,8 +59,8 @@ class RandomRegressionBaseline(BaseMLModel):
         return rand_scores + (0.0 * embeds.sum())
 
 class SimpleMLP(BaseMLModel):
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_users: int, embed_dim: int = 5, dropout_rate: float = 0.5):
-        super().__init__(num_users, embed_dim)
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_ids: int, embed_dim: int = 5, dropout_rate: float = 0.5):
+        super().__init__(num_ids, embed_dim)
         # Note: The input layer now accommodates the original features + the embedding vector
         self.net = torch.nn.Sequential(
             torch.nn.Linear(input_dim + embed_dim, hidden_dim),
@@ -74,8 +74,8 @@ class SimpleMLP(BaseMLModel):
         return self.net(x_combined)
 
 class SimpleGRU(BaseMLModel):
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_users: int, embed_dim: int = 5, dropout_rate: float = 0.5):
-        super().__init__(num_users, embed_dim)
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_ids: int, embed_dim: int = 5, dropout_rate: float = 0.5):
+        super().__init__(num_ids, embed_dim)
         self.gru = torch.nn.GRU(input_dim + embed_dim, hidden_dim, batch_first=True)
         self.dropout = torch.nn.Dropout(dropout_rate)
         self.fc = torch.nn.Linear(hidden_dim, output_dim)

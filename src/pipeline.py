@@ -284,17 +284,24 @@ class BasePipeline:
     
 
 class TabularPipeline(BasePipeline):
-    def __init__(self, analyser: Analyser, batch_size: int = 32, lookahead: int = 1):
+    def __init__(self, analyser: Analyser, batch_size: int = 32, lookahead: int = 1, windows: list[int] = [3, 5]):
         """ Pipeline for tabular data with a lookahead mechanism for future target prediction.
 
         Args:
             analyser (Analyser): Data analyser instance containing the raw data.
             batch_size (int, optional): Batch size for the data loaders. Defaults to 32.
             lookahead (int, optional): Lookahead value for future target prediction. Defaults to 1.
+            windows (list[int], optional): List of window sizes for rolling features. Defaults to [3, 5].
         """
         super().__init__(analyser, batch_size)
         self.lookahead = lookahead
-        
+        self.windows = windows
+
+    @property
+    def max_memory(self):
+        """ Calculates the maximum temporal lookback of this pipeline. """
+        return max(self.windows)
+
     def _engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
         df = add_step_behavioural_features(df)
         df = add_static_temporal_features(df)
@@ -302,7 +309,7 @@ class TabularPipeline(BasePipeline):
         
         cols_lag_mean = ['work_leisure_ratio', 'activity']
         cols_sum = ['screen', 'call', 'sms']
-        df = add_rolling_history(df, cols_lag_mean, cols_sum, windows=[3, 12, 24])
+        df = add_rolling_history(df, cols_lag_mean, cols_sum, windows=self.windows)
         
         return df
     
@@ -344,7 +351,7 @@ class TabularPipeline(BasePipeline):
             input_dim=self.input_dim, 
             hidden_dim=hidden_dim, 
             output_dim=self.num_classes, 
-            num_users=self.num_ids, 
+            num_ids=self.num_ids, 
             embed_dim=embed_dim,
             dropout_rate=dropout_rate
         )
@@ -378,6 +385,10 @@ class TimeSeriesPipeline(BasePipeline):
     def __init__(self, analyser, seq_len=7, batch_size=32):
         super().__init__(analyser, batch_size)
         self.seq_len = seq_len
+
+    @property
+    def max_memory(self):
+        return self.seq_len
 
     def _engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
         df = add_step_behavioural_features(df)
@@ -422,13 +433,14 @@ class TimeSeriesPipeline(BasePipeline):
             input_dim=self.input_dim, 
             hidden_dim=hidden_dim, 
             output_dim=self.num_classes, 
-            num_users=self.num_ids, 
+            num_ids=self.num_ids, 
             embed_dim=embed_dim,
             dropout_rate=dropout_rate
         )
 
 
 class ClassificationPipelineMixin:
+    num_ids: int
     CLASSIFICATION = True
     def __init__(self, *args, num_classes=5, **kwargs):
         super().__init__(*args, **kwargs)
@@ -437,18 +449,19 @@ class ClassificationPipelineMixin:
     def build_baseline_model(self):
         return RandomClassificationBaseline(
             output_dim=self.num_classes, 
-            num_users=self.num_ids, 
+            num_ids=self.num_ids, 
             embed_dim=5,
         )
     
 class RegressionPipelineMixin:
+    num_ids: int
     CLASSIFICATION = False
     num_classes = 1
 
     def build_baseline_model(self):
         return RandomRegressionBaseline(
             output_dim=self.num_classes, 
-            num_users=self.num_ids, 
+            num_ids=self.num_ids, 
             embed_dim=5,
         )
 

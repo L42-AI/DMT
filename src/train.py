@@ -14,17 +14,17 @@ import data as _data
 # Data hyperparameters
 INTERVAL = 1
 UNIT = 'H'
-CLASSES = 2
+NUM_CLASSES = 10
 
 # Model hyperparameters
 SEQ_LEN = 24
-BATCH_SIZE = 16
 EMBEDDING_DIM = 6
 HIDDEN_DIM = 64
 DROP_RATE = 0.5
 
 # Training hyperparameters
 LR = 0.001
+BATCH_SIZE = 16
 WEIGHT_DECAY = 1e-3
 
 def _extract_numpy_from_loader(loader):
@@ -219,7 +219,7 @@ def evaluate_daily_assignment_loss(model, dataloader, device='cpu'):
 def train_classification_model(analyser):
     print("\n--- Initializing Machine Learning Pipeline ---")
     
-    pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=CLASSES, batch_size=BATCH_SIZE)
+    pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE)
     train_loader, val_loader, test_loader = pipeline.get_dataloaders()
 
     # FIX: Unpack 4 items now since our dataloader yields (IDs, X, y, Time)
@@ -296,14 +296,14 @@ def walk_forward_train(analyser, tabular=False):
     # 1. Setup Pipeline
     # Using a shorter seq_len as discussed to preserve data points
     if tabular:
-        pipeline = TabularClassification(analyser, num_classes=CLASSES, batch_size=BATCH_SIZE)
+        pipeline = TabularClassification(analyser, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE, windows=[3, 5])
     else:
-        pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=CLASSES, batch_size=BATCH_SIZE)
+        pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE)
     
     # get_walk_forward_loaders returns (folds, test_loader)
     # if tabular, folds is a list of dicts with 'train' and 'val' keys containing NumPy arrays
     # if time-series, folds is a list of tuples (train_loader, val_loader)
-    folds, test_data = pipeline.get_walk_forward_loaders(n_splits=5, gap=5, test_ratio=0.15, tabular=tabular)
+    folds, test_data = pipeline.get_walk_forward_loaders(n_splits=5, gap=pipeline.max_memory, test_ratio=0.15, tabular=tabular)
 
     # DEBUG: Print class distribution for each fold to check for missing classes
     # plot_fold_class_distribution(folds, tabular=tabular)
@@ -382,7 +382,7 @@ def walk_forward_train(analyser, tabular=False):
 
 def main():
     analyser = prepare_data()
-    train_classification_model(analyser)
+    walk_forward_train(analyser, tabular=False)
     # train_regression_model(analyser)
 
 if __name__ == "__main__":

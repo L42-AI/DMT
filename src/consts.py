@@ -1,4 +1,8 @@
 from pathlib import Path
+import random
+
+import numpy as np
+import torch
 
 SRC_DIR = Path(__file__).parent
 
@@ -50,3 +54,7 @@ VAR_NAMES_ORDER = [
     'call',
     'sms',
 ]
+
+random.seed(42)
+torch.manual_seed(42)
+np.random.seed(42)
