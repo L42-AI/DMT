@@ -91,8 +91,8 @@ class XGBoostClassifierWrapper:
     def __init__(self, **kwargs):
         self.model = XGBClassifier(**kwargs)
 
-    def fit(self, X, y):
-        self.model.fit(X, y)
+    def fit(self, X, y, **kwargs):
+        self.model.fit(X, y, **kwargs)
 
     def predict(self, X):
         return self.model.predict(X)

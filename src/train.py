@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+
 from pipeline import TimeSeriesClassification, TimeSeriesRegression, TabularClassification, TabularRegression
 from trainer import Trainer
 from visualiser import Visualiser
@@ -197,77 +198,89 @@ def train_regression_model(analyser):
 
 def walk_forward_train(analyser, tabular=False):
     """ 
-    Train a model using walk-forward validation. 
+    Train a model using walk-forward validation. Exclusively uses walk-forward loader functions.
     Simulates real-world scenario of training on past data and validating on future data.
+    
+    Args:
+        analyser: The Analyser object containing the processed data.
+        tabular: If True, uses the Tabular pipeline and XGBoost. If False, uses the TimeSeries pipeline and PyTorch models.
     """
     # 1. Setup Pipeline
     # Using a shorter seq_len as discussed to preserve data points
     if tabular:
-        pipeline = TabularClassification(analyser, lookahead = 1, num_bins=5, batch_size=16)
+        pipeline = TabularClassification(analyser, lookahead = 1, num_bins=4, batch_size=16)
     else:
-        pipeline = TimeSeriesClassification(analyser, seq_len=24, num_bins=5, batch_size=16)
+        pipeline = TimeSeriesClassification(analyser, seq_len=24, num_bins=4, batch_size=16)
     
     # get_walk_forward_loaders returns (folds, test_loader)
-    # Each fold is a tuple: (train_loader, val_loader)
-    folds, test_loader = pipeline.get_walk_forward_loaders(n_splits=5, gap=5, test_ratio=0.15)
+    # if tabular, folds is a list of dicts with 'train' and 'val' keys containing NumPy arrays
+    # if time-series, folds is a list of tuples (train_loader, val_loader)
+    folds, test_data = pipeline.get_walk_forward_loaders(n_splits=5, gap=5, test_ratio=0.15, tabular=tabular)
 
     # 2. Walk-Forward Loop
     fold_results = []
     trained_model = None  # To keep track of the most recently trained model for final evaluation
 
-    for fold_idx, (train_loader, val_loader) in enumerate(folds):
-        # DESIGN CHOICE: Re-instantiate model/optimizer for every fold.
-        # This ensures each fold is an independent test of the training strategy. For model
-        # validation and hyperparameter tuning. When training final model, we should use the 
-        # same model instance and just keep training it on new data. (maybe in new function)
+    for fold_idx, fold_content in enumerate(folds):
         print(f"\n" + "="*30)
         print(f"🚀 STARTING FOLD {fold_idx + 1}/{len(folds)}")
         print(f"="*30)
         
         if tabular:
+            # Extract the NumPy arrays from the dictionary for XGBoost
+            train_set = fold_content['train']
+            val_set = fold_content['val']
+
+            # Build and train the XGBoost model on the current fold
             model = pipeline.build_xgboost_model()
-            X_train, y_train = _extract_numpy_from_loader(train_loader)
-            X_val, y_val = _extract_numpy_from_loader(val_loader)
-            print(f"Fitting XGBoost on Fold {X_train.shape[0]} training samples...")
-            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=10, verbose=False)
-            
-            # Evaluate on validation set
-            val_preds = model.predict(X_val)
-            val_acc = (val_preds == y_val).mean()
+            print(f"Fitting XGBoost on {len(train_set['X'])} training samples...")
+            model.fit(
+                train_set['X'], 
+                train_set['y'], 
+                eval_set=[(val_set['X'], val_set['y'])], 
+                verbose=False
+            )
+
+            # print accuracy 
+            val_preds = model.predict(val_set['X'])
+            val_acc = (val_preds == val_set['y']).mean()
             fold_results.append({'acc': val_acc})
             print(f"Fold {fold_idx + 1} Validation Accuracy: {val_acc:.2%}")
-            trained_model = model  # Update the most recently trained model for final test evaluation
-        else:
-            model = pipeline.build_model(hidden_dim=32, embed_dim=5, dropout_rate=0.5)
+
+            # Keep the trained model for final evaluation on the held-out test set
+            trained_model = model
             
+        else:
+            # UPDATE: fold_content is a tuple: (train_loader, val_loader)
+            train_loader, val_loader = fold_content
+            
+            # Build and train the PyTorch model on the current fold
+            model = pipeline.build_model(hidden_dim=32, embed_dim=5, dropout_rate=0.5)
             optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
             criterion = torch.nn.CrossEntropyLoss()
-
-            # Initialize Trainer
             trainer = Trainer(model, optimizer, criterion, task_type='classification')
-
-            # Fit on this fold's specific data
             trainer.fit(train_loader=train_loader, val_loader=val_loader, num_epochs=50)
             
-            # Optionally: Evaluate on val_loader one last time to save results
+            # Evaluate loss and accuracy on the validation set for this fold
             val_metrics = trainer._validate_epoch(val_loader)
             fold_results.append(val_metrics)
+
+            # Keep the trained model for final evaluation on the held-out test set
             trained_model = trainer 
 
-    # 3. Final Evaluation on the held-out Test Set
-    # We use the trainer from the VERY LAST fold to evaluate the test set,
-    # as it has been trained on the most recent data.
+    # 3. Final Evaluation
     print("\n" + "X"*40)
     print("      FINAL WALK-FORWARD TEST")
     print("X"*40)
 
     if tabular:
-        X_test, y_test = _extract_numpy_from_loader(test_loader)
-        test_preds = trained_model.predict(X_test)
-        test_acc = (test_preds == y_test).mean()
+        # UPDATE: test_data is a dict {'X': ..., 'y': ...}
+        test_preds = trained_model.predict(test_data['X'])
+        test_acc = (test_preds == test_data['y']).mean()
         test_metrics = {'acc': test_acc}
     else:
-        test_metrics = trained_model._validate_epoch(test_loader)
+        # test_data is a DataLoader
+        test_metrics = trained_model._validate_epoch(test_data)
     
     avg_fold_acc = sum(f['acc'] for f in fold_results) / len(fold_results)
     
@@ -278,8 +291,8 @@ def walk_forward_train(analyser, tabular=False):
 
 def main():
     analyser = prepare_data()
-    # walk_forward_train(analyser)
-    train_regression_model(analyser)
+    walk_forward_train(analyser, tabular=True)
+    # train_regression_model(analyser)
 
 if __name__ == "__main__":
     main()

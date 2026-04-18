@@ -8,6 +8,7 @@ from features.features_behavioural import add_step_behavioural_features
 from features.feature_pipeline import add_static_temporal_features, add_rolling_history
 from models import SimpleMLP, SimpleGRU, RandomClassificationBaseline, RandomRegressionBaseline, XGBoostClassifierWrapper
 from xgboost import XGBClassifier
+from analyser import Analyser
 
 class BasePipeline:
     CLASSIFICATION: bool
@@ -64,17 +65,54 @@ class BasePipeline:
     def _build_tensors(self, X_df, y_series, id_series):
         raise NotImplementedError()
 
-    # --- OPTIONAL OVERRIDE: Walk-Forward Splits ---
-    def get_walk_forward_loaders(self, n_splits=5, gap=2, test_ratio=0.15):
-        def make_loader(X_slice, y_slice, id_slice, time_slice, shuffle):
+    def get_walk_forward_loaders(
+            self, 
+            n_splits: int = 5, 
+            gap: int = 2,
+            test_ratio: float = 0.15, 
+            tabular: bool = False
+            ) -> Tuple[List, DataLoader] | Tuple[List, dict]:
+        """ Provides walk-forward folds and a final holdout test set.
+
+        Args:
+            n_splits (int, optional): number of splits. Defaults to 5.
+            gap (int, optional): gap between training and validation sets. Defaults to 2.
+            test_ratio (float, optional): ratio of data to use for testing. Defaults to 0.15.
+            tabular (bool, optional): whether to use tabular data format. Defaults to False.
+
+        Returns:
+            : _description_
+        """
+        def package_data(
+                X: np.ndarray, 
+                y: np.ndarray, 
+                id_val: np.ndarray, 
+                time_val: np.ndarray, 
+                shuffle=False
+            ) -> DataLoader | dict:
+            """ Depending on the pipeline type, either packages data into PyTorch DataLoaders or returns dicts of NumPy arrays for XGBoost.
+
+            Args:
+                X (np.ndarray): Feature array.
+                y (np.ndarray): Target array.
+                id_val (np.ndarray): ID array.
+                time_val (np.ndarray): Time array.
+                shuffle (bool, optional): Whether to shuffle the data. Defaults to False.
+
+            Returns:
+                DataLoader|dict: Either a PyTorch DataLoader for time-series pipelines or a dict of NumPy arrays for tabular pipelines.
+            """
+            if tabular:
+                return {'X': X, 'y': y}
+            
             dataset = TensorDataset(
-                torch.tensor(id_slice.copy(), dtype=torch.long),
-                torch.tensor(X_slice.copy(), dtype=torch.float32),
-                torch.tensor(y_slice.copy(), dtype=y_dtype),
-                torch.tensor(time_slice.copy(), dtype=torch.long) # Added Time Tensor
+                torch.tensor(id_val.copy(), dtype=torch.long),
+                torch.tensor(X.copy(), dtype=torch.float32),
+                torch.tensor(y.copy(), dtype=y_dtype),
+                torch.tensor(time_val.copy(), dtype=torch.long)
             )
             return DataLoader(dataset, batch_size=self.batch_size, shuffle=shuffle, drop_last=True)
-            
+        
         df = self._prepare_base_data()
         df = self._clean_data(df)
         df = self._engineer_features(df)
@@ -86,39 +124,43 @@ class BasePipeline:
 
         self.input_dim = X_arr.shape[-1]
 
-        # 6. Global Chronological Split (PER USER)
-        train_idx, val_idx, test_idx = [], [], []
-        train_ratio = 1.0 - test_ratio
-
-        for uid in np.unique(id_arr):
+        train_idx, test_idx = [], []
+        for uid in np.unique(id_arr):   
             idx = np.where(id_arr == uid)[0]
-            n_user = len(idx)
-            train_end = int(n_user * train_ratio)
-            val_end = int(n_user * (train_ratio + test_ratio))
-            
-            train_idx.extend(idx[:train_end])
-            val_idx.extend(idx[train_end:val_end])
-            test_idx.extend(idx[val_end:])
+            split_pt = int(len(idx) * (1 - test_ratio))
+            train_idx.extend(idx[:split_pt])
+            test_idx.extend(idx[split_pt:])
+        
+        # Prepare the final holdout test set
+        X_train_full, X_test_full = X_arr[train_idx], X_arr[test_idx]
+        _, _, X_test_scaled_full = self._scale_features(None, None, X_test_full)
+        test_data = package_data(X_test_scaled_full, y_arr[test_idx], id_arr[test_idx], time_arr[test_idx], shuffle=False)
 
-        X_train, y_train, id_train, time_train = X_arr[train_idx], y_arr[train_idx], id_arr[train_idx], time_arr[train_idx]
-        X_val, y_val, id_val, time_val = X_arr[val_idx], y_arr[val_idx], id_arr[val_idx], time_arr[val_idx]
-        X_test, y_test, id_test, time_test = X_arr[test_idx], y_arr[test_idx], id_arr[test_idx], time_arr[test_idx]
-
-        X_train, X_val, X_test = self._scale_features(X_train, X_val, X_test)
+        # Prepare the training pool
+        y_train_pool = y_arr[train_idx]
+        id_train_pool = id_arr[train_idx]
+        time_train_pool = time_arr[train_idx]
 
         tss = TimeSeriesSplit(n_splits=n_splits, gap=gap)
         folds = []
-        for train_index, val_index in tss.split(X_val):
-            train_loader = make_loader(X_val[train_index], y_val[train_index], id_val[train_index], time_val[train_index], shuffle=True)
-            val_loader = make_loader(X_val[val_index], y_val[val_index], id_val[val_index], time_val[val_index], shuffle=False)
-            folds.append((train_loader, val_loader))
-            
-        test_loader = make_loader(X_test, y_test, id_test, time_test, shuffle=False)
+        for tr_fold_idx, val_fold_idx in tss.split(X_train_full):
 
-        print(f"\n--- {self.__class__.__name__} Ready ---")
-        return folds, test_loader 
+            # Extract fold-specific training and validation sets
+            X_tr_fold, X_val_fold = X_train_full[tr_fold_idx], X_train_full[val_fold_idx]
+
+            # Independently scale them to prevent data leakage
+            x_tr_fold_scaled, x_val_fold_scaled, _= self._scale_features(X_tr_fold, X_val_fold, None)
+
+            # Package into DataLoaders, or dicts if tabular
+            train_out = package_data(x_tr_fold_scaled, y_train_pool[tr_fold_idx], id_train_pool[tr_fold_idx], time_train_pool[tr_fold_idx], shuffle=not tabular)
+            val_out = package_data(x_val_fold_scaled, y_train_pool[val_fold_idx], id_train_pool[val_fold_idx], time_train_pool[val_fold_idx], shuffle=False)
+
+            # Add fold data to list.
+            folds.append((train_out, val_out) if not tabular else {'train': train_out, 'val': val_out})
+        
+        return folds, test_data
     
-    def get_dataloaders(self, train_ratio=0.7, val_ratio=0.15):
+    def get_dataloaders(self, train_ratio=0.7, val_ratio=0.15, as_numpy=False):
         df = self._prepare_base_data()
         df = self._clean_data(df)
         df = self._engineer_features(df)
@@ -169,8 +211,16 @@ class BasePipeline:
         
         return train_loader, val_loader, test_loader
     
+
 class TabularPipeline(BasePipeline):
-    def __init__(self, analyser, batch_size=32, lookahead=1):
+    def __init__(self, analyser: Analyser, batch_size: int = 32, lookahead: int = 1):
+        """ Pipeline for tabular data with a lookahead mechanism for future target prediction.
+
+        Args:
+            analyser (Analyser): Data analyser instance containing the raw data.
+            batch_size (int, optional): Batch size for the data loaders. Defaults to 32.
+            lookahead (int, optional): Lookahead value for future target prediction. Defaults to 1.
+        """
         super().__init__(analyser, batch_size)
         self.lookahead = lookahead
         
@@ -239,7 +289,7 @@ class TabularPipeline(BasePipeline):
         # Default XGBoost parameters for classification
         defaults = {
             'n_estimators': 100,
-            'learning_rate': 0.1,
+            'learning_rate': 0.01,
             'max_depth': 3,
             'use_label_encoder': False,
             'eval_metric': 'mlogloss'
