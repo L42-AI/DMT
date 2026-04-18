@@ -56,6 +56,7 @@ class Aggregator:
 
         agg_data['value'] = agg_data['value'].clip(lower=0)
         agg_data['value'] = agg_data['value'] / seconds
+        agg_data['value'] = agg_data['value'].apply(lambda x: np.log1p(x) if x > 0 else 0)
         agg_data['value'] = agg_data['value'].round(3)
 
         agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
