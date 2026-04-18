@@ -169,7 +169,6 @@ class Aggregator:
         agg_data.set_index('time', inplace=True)
 
         agg_data = agg_data.groupby(['id', 'variable']).resample(f'{interval}{unit.lower()}')['value'].mean().reset_index()
-        
         agg_data['value'] = agg_data['value'].round(2)
         agg_data.sort_values(['variable', 'id', 'time'], inplace=True)
 
@@ -190,9 +189,6 @@ class Analyser:
     # === Constructor ===
     def __init__(self, data: pd.DataFrame):
         self.data = data
-
-        # Create date column
-        self.data['date'] = self.data['time'].dt.date
 
         # Variable types
         self.scored_vars = USER_VARS
@@ -281,7 +277,7 @@ class Analyser:
 
         div_by_2_mask = df['variable'].isin(['circumplex.arousal', 'circumplex.valence'])
 
-        df.loc[div_by_2_mask, 'value'] = df.loc[div_by_2_mask, 'value'] / 2
+        df.loc[div_by_2_mask, 'value'] = (df.loc[div_by_2_mask, 'value'] + 2) / 4
 
         if inplace:
             self.data.__dict__.update(df.__dict__)
