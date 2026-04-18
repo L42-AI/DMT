@@ -15,6 +15,7 @@ def main():
     analyser.aggregate.activity(interval=1, unit='D', inplace=True)
     analyser.aggregate.communication_events(interval=1, unit='D', inplace=True)
     analyser.aggregate.reported_data(inplace=True)
+    analyser.apply_scaling(inplace=True)
 
     analyser.data.to_csv('data/aggregated_data.csv', index=False)
     analyser.impute(delete=False, catsi=True, epochs=10)
