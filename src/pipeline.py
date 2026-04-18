@@ -287,13 +287,23 @@ class TabularPipeline(BasePipeline):
     def build_xgboost_model(self, **kwargs):
         """Builds an XGBoost classifier with a wrapper."""
         # Default XGBoost parameters for classification
-        defaults = {
-            'n_estimators': 100,
-            'learning_rate': 0.01,
-            'max_depth': 3,
-            'use_label_encoder': False,
-            'eval_metric': 'mlogloss'
-        }
+        if self.num_classes == 2:
+            defaults = {
+                'n_estimators': 100,
+                'learning_rate': 0.01,
+                'max_depth': 3,
+                'objective': 'binary:logistic',
+                'eval_metric': 'logloss',
+            }
+        else:
+            defaults = {
+                'n_estimators': 100,
+                'learning_rate': 0.01,
+                'max_depth': 3,
+                'objective': 'multi:softprob',
+                'num_class': int(self.num_classes),
+                'eval_metric': 'mlogloss',
+            }
         # Override defaults with any user-provided kwargs
         defaults.update(kwargs)
         

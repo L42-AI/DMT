@@ -61,6 +61,82 @@ def prepare_data() -> Analyser:
     
     return analyser
 
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
+def plot_fold_class_distribution(folds, tabular=True):
+    rows = []
+
+    for fold_idx, fold in enumerate(folds, start=1):
+        if tabular:
+            y_train = np.asarray(fold['train']['y']).reshape(-1).astype(int)
+            y_val = np.asarray(fold['val']['y']).reshape(-1).astype(int)
+        else:
+            train_loader, val_loader = fold
+            _, y_train = _extract_numpy_from_loader(train_loader)
+            _, y_val = _extract_numpy_from_loader(val_loader)
+            y_train = np.asarray(y_train).reshape(-1).astype(int)
+            y_val = np.asarray(y_val).reshape(-1).astype(int)
+
+        for split_name, y in [('train', y_train), ('val', y_val)]:
+            classes, counts = np.unique(y, return_counts=True)
+            for c, n in zip(classes, counts):
+                rows.append({
+                    'fold': fold_idx,
+                    'split': split_name,
+                    'class': int(c),
+                    'count': int(n),
+                })
+
+    dist_df = pd.DataFrame(rows)
+
+    # Print missing classes per fold
+    all_classes = sorted(dist_df['class'].unique().tolist())
+    print("All classes observed across all folds:", all_classes)
+
+    for fold_idx in sorted(dist_df['fold'].unique()):
+        for split_name in ['train', 'val']:
+            present = sorted(
+                dist_df[(dist_df['fold'] == fold_idx) & (dist_df['split'] == split_name)]['class']
+                .unique().tolist()
+            )
+            missing = sorted(list(set(all_classes) - set(present)))
+            print(f"Fold {fold_idx} | {split_name} present={present} missing={missing}")
+
+    # Plot
+    n_folds = dist_df['fold'].nunique()
+    fig, axes = plt.subplots(n_folds, 1, figsize=(10, 3 * n_folds), sharex=True)
+    if n_folds == 1:
+        axes = [axes]
+
+    for i, fold_idx in enumerate(sorted(dist_df['fold'].unique())):
+        ax = axes[i]
+        sub = dist_df[dist_df['fold'] == fold_idx]
+
+        pivot_train = sub[sub['split'] == 'train'].set_index('class')['count']
+        pivot_val = sub[sub['split'] == 'val'].set_index('class')['count']
+
+        classes = sorted(sub['class'].unique().tolist())
+        x = np.arange(len(classes))
+        w = 0.36
+
+        train_counts = [pivot_train.get(c, 0) for c in classes]
+        val_counts = [pivot_val.get(c, 0) for c in classes]
+
+        ax.bar(x - w/2, train_counts, width=w, label='train')
+        ax.bar(x + w/2, val_counts, width=w, label='val')
+
+        ax.set_title(f'Fold {fold_idx} class distribution')
+        ax.set_ylabel('count')
+        ax.set_xticks(x)
+        ax.set_xticklabels(classes)
+        ax.legend()
+
+    axes[-1].set_xlabel('class')
+    plt.tight_layout()
+    plt.show()
+
 def evaluate_daily_assignment_loss(model, dataloader, device='cpu'):
     """
     Computes the loss on the Daily Average Mood, satisfying the assignment requirement.
@@ -208,14 +284,17 @@ def walk_forward_train(analyser, tabular=False):
     # 1. Setup Pipeline
     # Using a shorter seq_len as discussed to preserve data points
     if tabular:
-        pipeline = TabularClassification(analyser, lookahead = 1, num_bins=4, batch_size=16)
+        pipeline = TabularClassification(analyser, lookahead = 1, num_bins=2, batch_size=16)
     else:
-        pipeline = TimeSeriesClassification(analyser, seq_len=24, num_bins=4, batch_size=16)
+        pipeline = TimeSeriesClassification(analyser, seq_len=24, num_bins=2, batch_size=16)
     
     # get_walk_forward_loaders returns (folds, test_loader)
     # if tabular, folds is a list of dicts with 'train' and 'val' keys containing NumPy arrays
     # if time-series, folds is a list of tuples (train_loader, val_loader)
     folds, test_data = pipeline.get_walk_forward_loaders(n_splits=5, gap=5, test_ratio=0.15, tabular=tabular)
+
+    # DEBUG: Print class distribution for each fold to check for missing classes
+    # plot_fold_class_distribution(folds, tabular=tabular)
 
     # 2. Walk-Forward Loop
     fold_results = []
