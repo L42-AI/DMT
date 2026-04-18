@@ -20,12 +20,13 @@ NUM_CLASSES = 10
 SEQ_LEN = 24
 EMBEDDING_DIM = 6
 HIDDEN_DIM = 64
-DROP_RATE = 0.5
+DROP_RATE = 0.0
 
 # Training hyperparameters
 LR = 0.001
 BATCH_SIZE = 16
 WEIGHT_DECAY = 1e-3
+EPOCHS = 100
 
 def _extract_numpy_from_loader(loader):
     """Helper function to convert a DataLoader back to NumPy arrays."""
@@ -237,7 +238,7 @@ def train_classification_model(analyser):
 
     # 4. Train the Model
     trainer = Trainer(model, optimizer, criterion, task_type='classification')
-    trainer.fit(train_loader, val_loader=val_loader, num_epochs=300)
+    trainer.fit(train_loader, val_loader=val_loader, num_epochs=EPOCHS)
     
     # Optional: Run a final pass on the test set
     print("\n--- Running Final Test Set Evaluation ---")
@@ -266,7 +267,7 @@ def train_regression_model(analyser):
 
     # 4. Train the Model on Hourly Data
     trainer = Trainer(model, optimizer, criterion, task_type='regression')
-    trainer.fit(train_loader, val_loader=val_loader, num_epochs=300)
+    trainer.fit(train_loader, val_loader=val_loader, num_epochs=EPOCHS)
 
     # ---------------------------------------------------------
     # 5. ASSIGNMENT EVALUATION (Daily Average)
@@ -350,7 +351,7 @@ def walk_forward_train(analyser, tabular=False):
             optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
             criterion = torch.nn.CrossEntropyLoss()
             trainer = Trainer(model, optimizer, criterion, task_type='classification')
-            trainer.fit(train_loader=train_loader, val_loader=val_loader, num_epochs=50)
+            trainer.fit(train_loader=train_loader, val_loader=val_loader, num_epochs=EPOCHS)
             
             # Evaluate loss and accuracy on the validation set for this fold
             val_metrics = trainer._validate_epoch(val_loader)
@@ -382,7 +383,8 @@ def walk_forward_train(analyser, tabular=False):
 
 def main():
     analyser = prepare_data()
-    walk_forward_train(analyser, tabular=False)
+    # walk_forward_train(analyser, tabular=False)
+    train_classification_model(analyser)
     # train_regression_model(analyser)
 
 if __name__ == "__main__":

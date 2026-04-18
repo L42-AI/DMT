@@ -14,7 +14,7 @@ import data as _data
 from pipeline import TimeSeriesClassification, TimeSeriesRegression
 
 # --- HYPERPARAMETERS ---
-TOTAL_RUNS = 10_000 # Lowered to 10k so testing 4 different classes doesn't take all day!
+TOTAL_RUNS = 100_000 # Lowered to 10k so testing 4 different classes doesn't take all day!
 TEST_CLASSES = [2, 3, 4, 5] 
 
 def prepare_data() -> Analyser:
@@ -91,9 +91,9 @@ def parallel_visualize_baseline(analyser, task_type='classification', total_runs
     
     # Prepare Pipeline dynamically
     if task_type == 'classification':
-        pipeline = TimeSeriesClassification(analyser, seq_len=24, num_classes=num_classes, batch_size=1)
+        pipeline = TimeSeriesClassification(analyser, seq_len=24, num_classes=num_classes, batch_size=2048)
     else:
-        pipeline = TimeSeriesRegression(analyser, seq_len=24, batch_size=1)
+        pipeline = TimeSeriesRegression(analyser, seq_len=24, batch_size=2048)
         
     _, val_loader, _ = pipeline.get_dataloaders()
     model = pipeline.build_baseline_model()
