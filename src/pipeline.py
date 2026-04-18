@@ -121,29 +121,89 @@ class BasePipeline:
 
         # Unpack 4 tensors now
         X_arr, y_arr, id_arr, time_arr, y_dtype = self._build_tensors(X_df, y_series, id_series)
-
         self.input_dim = X_arr.shape[-1]
-
-        train_idx, test_idx = [], []
-        for uid in np.unique(id_arr):   
-            idx = np.where(id_arr == uid)[0]
-            split_pt = int(len(idx) * (1 - test_ratio))
-            train_idx.extend(idx[:split_pt])
-            test_idx.extend(idx[split_pt:])
         
-        # Prepare the final holdout test set
-        X_train_full, X_test_full = X_arr[train_idx], X_arr[test_idx]
-        _, _, X_test_scaled_full = self._scale_features(None, None, X_test_full)
-        test_data = package_data(X_test_scaled_full, y_arr[test_idx], id_arr[test_idx], time_arr[test_idx], shuffle=False)
+        """ 
+        TESTING
+        """
+        # Global chronological ordering across all users
+        global_order = np.argsort(time_arr, kind='mergesort')
+        X_ord = X_arr[global_order]
+        y_ord = y_arr[global_order]
+        id_ord = id_arr[global_order]
+        time_ord = time_arr[global_order]
 
+        # Chronological holdout split
+        split_pt = int(len(X_ord) * (1 - test_ratio))
+
+        X_train_full = X_ord[:split_pt]
+        y_train_pool = y_ord[:split_pt]
+        id_train_pool = id_ord[:split_pt]
+        time_train_pool = time_ord[:split_pt]
+
+        X_test_full = X_ord[split_pt:]
+        y_test_full = y_ord[split_pt:]
+        id_test_full = id_ord[split_pt:]
+        time_test_full = time_ord[split_pt:]
+
+        # Prepare final holdout test set
+        _, _, X_test_scaled_full = self._scale_features(None, None, X_test_full)
+        test_data = package_data(
+            X_test_scaled_full,
+            y_test_full,
+            id_test_full,
+            time_test_full,
+            shuffle=False
+        )
+        """ 
+        END TESTING
+        """
+
+        """
+        PREVIOUS USER-LEVEL SPLIT (RETAINED FOR REFERENCE)
+        """
+        # train_idx, test_idx = [], []
+        # for uid in np.unique(id_arr):   
+        #     idx = np.where(id_arr == uid)[0]
+        #     split_pt = int(len(idx) * (1 - test_ratio))
+        #     train_idx.extend(idx[:split_pt])
+        #     test_idx.extend(idx[split_pt:])
+        
+        # # Prepare the final holdout test set
+        # X_train_full, X_test_full = X_arr[train_idx], X_arr[test_idx]
+        # _, _, X_test_scaled_full = self._scale_features(None, None, X_test_full)
+        # test_data = package_data(X_test_scaled_full, y_arr[test_idx], id_arr[test_idx], time_arr[test_idx], shuffle=False)
         # Prepare the training pool
-        y_train_pool = y_arr[train_idx]
-        id_train_pool = id_arr[train_idx]
-        time_train_pool = time_arr[train_idx]
+        # y_train_pool = y_arr[train_idx]
+        # id_train_pool = id_arr[train_idx]
+        # time_train_pool = time_arr[train_idx]
+        
+        """
+        END PREVIOUS USER-LEVEL SPLIT (RETAINED FOR REFERENCE)
+        """
+        
+        
 
         tss = TimeSeriesSplit(n_splits=n_splits, gap=gap)
         folds = []
         for tr_fold_idx, val_fold_idx in tss.split(X_train_full):
+
+            """
+                SAFETY CHECK: ENFORCE STRICT TEMPORAL PROTOCOL
+                This ensures that the training fold only contains data points that are strictly earlier than any data point in the validation fold, thus preventing any temporal leakage.
+            """
+            # Safety check: enforce strict forward time order in each fold
+            tr_times = time_train_pool[tr_fold_idx]
+            val_times = time_train_pool[val_fold_idx]
+            if tr_times.max() > val_times.min():
+                raise ValueError(
+                    "Temporal protocol violation: train fold contains timestamps "
+                    "that are not strictly earlier than validation fold."
+                )
+
+            """
+                END SAFETY CHECK
+            """
 
             # Extract fold-specific training and validation sets
             X_tr_fold, X_val_fold = X_train_full[tr_fold_idx], X_train_full[val_fold_idx]

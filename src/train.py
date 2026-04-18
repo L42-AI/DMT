@@ -370,7 +370,7 @@ def walk_forward_train(analyser, tabular=False):
 
 def main():
     analyser = prepare_data()
-    walk_forward_train(analyser, tabular=True)
+    walk_forward_train(analyser, tabular=False)
     # train_regression_model(analyser)
 
 if __name__ == "__main__":
