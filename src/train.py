@@ -13,8 +13,8 @@ import data as _data
 
 # Data hyperparameters
 INTERVAL = 1
-UNIT = 'H'
-NUM_CLASSES = 10
+UNIT = 'D'
+NUM_CLASSES = 4
 
 # Model hyperparameters
 SEQ_LEN = 24

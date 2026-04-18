@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List
 
 import pandas as pd
+import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -13,6 +14,159 @@ class Visualiser:
     def __init__(self, data: pd.DataFrame):
         self.data = data
 
+
+    # === Methods for visualisations that will be in the report ===
+    def report_variable_distributions(self, save: bool = False):
+        
+        # 1. Load data
+        df = self.data.copy()
+        df['time'] = pd.to_datetime(df['time'])
+        df['date'] = df['time'].dt.date
+
+        # 2. Pre-process: Clean variable names
+        df['variable'] = df['variable'].str.replace('appCat.', '', regex=False)
+
+        # 3. Aggregate: Define Mean vs Sum strategy
+        # Psychological states and physical activity should be averaged
+        avg_vars = ['mood', 'circumplex.arousal', 'circumplex.valence', 'activity']
+        # Behaviors and app usage should be summed (total duration/count per day)
+        sum_vars = [v for v in df['variable'].unique() if v not in avg_vars]
+
+        # Pivot and aggregate
+        daily_avg = df[df['variable'].isin(avg_vars)].pivot_table(index=['id', 'date'], columns='variable', values='value', aggfunc='mean')
+        daily_sum = df[df['variable'].isin(sum_vars)].pivot_table(index=['id', 'date'], columns='variable', values='value', aggfunc='sum')
+
+        # Merge into a wide-format daily dataset
+        daily_df = daily_avg.join(daily_sum, how='outer').reset_index()
+
+        # 4. Numerical Distribution Info
+        dist_info = pd.DataFrame({
+            'Skewness': daily_df.skew(numeric_only=True),
+            'Kurtosis': daily_df.kurtosis(numeric_only=True),
+            'Median': daily_df.median(numeric_only=True)
+        })
+        print(dist_info)
+
+        # 5. Visualization: Histograms showing the "Shape"
+        viz_cols = ['circumplex.arousal', 'mood', 'circumplex.valence', 'social', 'communication', 'entertainment']
+        plt.figure(figsize=(15, 10))
+        for i, col in enumerate(viz_cols):
+            plt.subplot(2, 3, i+1)
+            sns.histplot(daily_df[col].dropna(), kde=True, color='royalblue')
+            plt.title(f'{col.capitalize()} (Skew: {dist_info.loc[col, "Skewness"]:.2f}) (Kurtosis: {dist_info.loc[col, "Kurtosis"]:.2f})')
+        plt.tight_layout()
+        plt.show()
+    
+    def report_correlations(self, save: bool = False):
+        """Report correlations between variables."""
+        # 1. Load and Aggregate
+        df = self.data.copy()
+        df['date'] = pd.to_datetime(df['time']).dt.date
+        df['variable'] = df['variable'].str.replace('appCat.', '', regex=False)
+
+        # Define columns to average vs sum
+        avg_cols = ['mood', 'activity', 'circumplex.arousal', 'circumplex.valence']
+        sum_cols = [v for v in df['variable'].unique() if v not in avg_cols]
+
+        # Pivot to daily wide format
+        daily_avg = df[df['variable'].isin(avg_cols)].pivot_table(index=['id', 'date'], columns='variable', values='value', aggfunc='mean')
+        daily_sum = df[df['variable'].isin(sum_cols)].pivot_table(index=['id', 'date'], columns='variable', values='value', aggfunc='sum')
+        daily_df = daily_avg.join(daily_sum, how='outer').reset_index()
+
+        # 2. Plot 1: Side-by-Side Heatmaps
+        target_features = ['mood', 'activity', 'circumplex.valence', 'screen', 'social']
+        user_id = 'AS14.01'
+
+        fig, ax = plt.subplots(1, 2, figsize=(20, 7))
+        sns.heatmap(daily_df[target_features].corr(method='spearman'), annot=True, cmap='RdBu_r', ax=ax[0])
+        ax[0].set_title('Global Correlation')
+
+        sns.heatmap(daily_df[daily_df['id']==user_id][target_features].corr(method='spearman'), annot=True, cmap='RdBu_r', ax=ax[1])
+        ax[1].set_title(f'Individual Correlation ({user_id})')
+        plt.show()
+
+        # 3. Plot 2: Simpson's Paradox
+        plt.figure(figsize=(10, 6))
+        # Plot individual trends for a few users
+        reliable_users = daily_df['id'].unique()[:5]
+        sns.scatterplot(data=daily_df[daily_df['id'].isin(reliable_users)], x='activity', y='mood', hue='id', alpha=0.3)
+
+        for user in reliable_users:
+            sns.regplot(data=daily_df[daily_df['id']==user], x='activity', y='mood', scatter=False)
+
+        # Global dashed line
+        sns.regplot(data=daily_df, x='activity', y='mood', scatter=False, color='black', line_kws={'linestyle':'--'}, label='Global')
+        plt.legend()
+        plt.show()
+
+    def report_global_corr_matrix(self, save: bool = False):
+        df = self.data.copy()
+        df['date'] = pd.to_datetime(df['time']).dt.date
+
+        # Clean variable names (removing 'appCat.' for better plot labels)
+        df['variable'] = df['variable'].str.replace('appCat.', '', regex=False)
+
+        # 2. Daily Aggregation
+        # Psychological states and activity should be averaged
+        avg_vars = ['mood', 'circumplex.arousal', 'circumplex.valence', 'activity']
+        # Behavioral usage should be summed to get daily totals
+        sum_vars = [v for v in df['variable'].unique() if v not in avg_vars]
+
+        daily_avg = df[df['variable'].isin(avg_vars)].pivot_table(index=['id', 'date'], columns='variable', values='value', aggfunc='mean')
+        daily_sum = df[df['variable'].isin(sum_vars)].pivot_table(index=['id', 'date'], columns='variable', values='value', aggfunc='sum')
+
+        # Merge into a single wide-format dataset
+        daily_df = daily_avg.join(daily_sum, how='outer').reset_index()
+
+        # 3. Calculate and Plot Global Spearman Correlation
+        # We drop ID and Date columns for the calculation
+        global_corr = daily_df.drop(columns=['id', 'date']).corr(method='spearman')
+
+        plt.figure(figsize=(16, 12))
+
+        # Optional: Mask the upper triangle for a cleaner look
+        mask = np.triu(np.ones_like(global_corr, dtype=bool))
+
+        sns.heatmap(global_corr, 
+                    mask=mask, 
+                    annot=True, 
+                    fmt=".2f", 
+                    cmap='RdBu_r', 
+                    center=0, 
+                    linewidths=0.5)
+
+        plt.title('Global Correlation Matrix: All Attributes (Daily Aggregated)')
+        plt.tight_layout()
+        plt.show()
+
+    def report_missingness(self, save: bool = False):
+        # 1. Load and Pivot to Daily
+        df = self.data.copy()
+        df['date'] = pd.to_datetime(df['time']).dt.date
+        daily_df = df.pivot_table(index=['id', 'date'], columns='variable', values='value', aggfunc='mean')
+
+        # 2. Quantify Missingness
+        missing_stats = daily_df.isnull().sum().sort_values(ascending=False)
+        missing_percent = (daily_df.isnull().mean() * 100).sort_values(ascending=False)
+
+        print("--- Missing Values per Variable (%) ---")
+        print(missing_percent)
+
+        # 3. Visualize Missingness Heatmap
+        plt.figure(figsize=(15, 8))
+        sns.heatmap(daily_df.isnull(), cbar=False, cmap='viridis')
+        plt.title('Daily Missing Data Heatmap (Yellow = Missing, Purple = Present)')
+        plt.xlabel('Variables')
+        plt.ylabel('User-Days')
+        plt.tight_layout()
+        plt.show()
+
+        # 4. Analyze User Dropout
+        user_missingness = daily_df.isnull().mean(axis=1).groupby('id').mean()
+        print("\n--- Top 5 Users with Most Missing Data ---")
+        print(user_missingness.sort_values(ascending=False).head())
+
+    # === Methods for visualisations that are more for exploration and understanding of the data ===
     def descriptives(self):
         ''' Descriptive statistics for all variables of the dataset '''
         data_audit = self.data.groupby('variable')['value'].describe()
