@@ -69,7 +69,7 @@ class BasePipeline:
 
     def process_targets(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
         if self.CLASSIFICATION:
-            bins = np.linspace(1.0, 10.0, self.num_classes + 1)
+            bins = np.linspace(0.0, 1.0, self.num_classes + 1)
             y_series = pd.cut(y_series, bins=bins, labels=False, include_lowest=True)
             y_dtype = torch.long
         else:

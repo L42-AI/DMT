@@ -278,9 +278,13 @@ class Analyser:
 
         df = self.data.copy()
 
-        div_by_2_mask = df['variable'].isin(['circumplex.arousal', 'circumplex.valence'])
+        div_by_4_mask = df['variable'].isin(['circumplex.arousal', 'circumplex.valence'])
 
-        df.loc[div_by_2_mask, 'value'] = (df.loc[div_by_2_mask, 'value'] + 2) / 4
+        df.loc[div_by_4_mask, 'value'] = (df.loc[div_by_4_mask, 'value'] + 2) / 4
+
+        df.loc[df['variable'] == 'mood', 'value'] = (df.loc[df['variable'] == 'mood', 'value'] - 1) / 9
+
+        df.loc[df['variable'].isin(['circumplex.arousal', 'circumplex.valence', 'mood']), 'value'] = df.loc[df['variable'].isin(['circumplex.arousal', 'circumplex.valence', 'mood']), 'value'].clip(0, 1)
 
         if inplace:
             self.data.__dict__.update(df.__dict__)
