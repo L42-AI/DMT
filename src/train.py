@@ -18,7 +18,7 @@ import data as _data
 
 # Data hyperparameters
 INTERVAL = 1
-UNIT = 'D'
+UNIT = 'H'
 NUM_CLASSES = 10
 
 # Model hyperparameters
@@ -293,8 +293,9 @@ def train_random_forest_regression(analyser, save_plotting: bool = False):
     test_preds = rf.predict(X_test)
 
     results_df, final_mse, final_mae = evaluate_sklearn_predictions(
+        analyser=analyser,
         preds=test_preds,
-        y_true=y_test,
+        # y_true=y_test,
         ids=id_test,
         times=time_test,
         model_name="Random Forest"

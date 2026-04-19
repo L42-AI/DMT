@@ -13,9 +13,9 @@ def _get_numpy_predictions(preds, ids, times, freq='D'):
         'timestamp': times, 
         'predicted_mood': preds
     })
-    
+
     # Format time and rescale (0-1 -> 1-10)
-    df['period'] = pd.to_datetime(df['timestamp'], unit='s').dt.floor(freq)
+    df['period'] = pd.to_datetime(df['timestamp'] * 1000, unit='s').dt.floor(freq)
     df['predicted_mood'] = df['predicted_mood'] * 9 + 1
     
     return df.groupby(['id', 'period'])['predicted_mood'].mean().reset_index()
@@ -107,10 +107,13 @@ def evaluate_sklearn_predictions(analyser, preds, ids, times, model_name="Random
     
     # 2. Reuse your exact same Ground Truth helper!
     truth_agg = _get_ground_truth(analyser, freq)
-    
+
     # Inner merge implicitly filters out non-overlapping periods
     results_df = pd.merge(pred_agg, truth_agg, on=['id', 'period'], how='inner')
-    
+
+    # RF predicts next days also for days that have no mood recorded, so we may have some NaNs after the merge. We should drop them before metric calculation.
+    results_df.dropna(inplace=True)  # Ensure no NaNs before metric calculation
+
     mse = mean_squared_error(results_df['actual_mood'], results_df['predicted_mood'])
     mae = mean_absolute_error(results_df['actual_mood'], results_df['predicted_mood'])
     
