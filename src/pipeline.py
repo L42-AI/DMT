@@ -6,9 +6,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from typing import Tuple, List
 from features.features_behavioural import add_step_behavioural_features
 from features.feature_pipeline import add_static_temporal_features, add_rolling_history
-from models import SimpleMLP, SimpleGRU, RandomClassificationBaseline, RandomRegressionBaseline, XGBoostClassifierWrapper
-from xgboost import XGBClassifier
-from analyser import Analyser
+from models import SimpleMLP, SimpleGRU, RandomClassificationBaseline, RandomRegressionBaseline
 
 class BasePipeline:
     CLASSIFICATION: bool
@@ -25,9 +23,19 @@ class BasePipeline:
         """ Pivots the dataframe, resets ID to a column, and sets Time as the sole index. """
         wide_format = self.analyser.data.pivot_table(index=['time', 'id'], columns='variable', values='value')
         wide_format = wide_format.reset_index(level='id')
-        
+        id_mapping = dict(enumerate(wide_format['id'].astype('category').cat.categories))
+
         wide_format['id'] = wide_format['id'].apply(lambda x: int(str(x)[-2:]))
+        
+        
         wide_format['id'] = wide_format['id'].astype('category').cat.codes
+
+        print(f"DEBUG: Before Trimming - Total Rows: {len(wide_format)}")
+        wide_format = self._trim_individual_series(wide_format)
+        print(f"DEBUG: After Trimming  - Total Rows: {len(wide_format)}")
+        print(wide_format.head())
+        print(wide_format.columns)
+        print(id_mapping)
         
         return wide_format.sort_index()
 
@@ -43,6 +51,107 @@ class BasePipeline:
 
     def _clean_data(self, X_df):
         return X_df
+    
+    def _impute_multivariate(self, X_train, X_val=None, X_test=None):
+        # 1. Initialize the MissForest proxy (IterativeImputer with RF)
+        imputer = IterativeImputer(
+            estimator=RandomForestRegressor(n_estimators=10, n_jobs=-1),
+            max_iter=20,
+            random_state=42
+        )
+
+        # Helper to flatten 3D -> 2D
+        def flatten_if_3d(arr):
+            if arr is not None and len(arr.shape) == 3:
+                # Reshape to (Samples * Seq_Len, Features)
+                return arr.reshape(-1, arr.shape[-1]), arr.shape
+            return arr, None
+
+        # Helper to restore 2D -> 3D
+        def restore_if_3d(arr, original_shape):
+            if original_shape is not None:
+                return arr.reshape(original_shape)
+            return arr
+
+        # 1. Prepare data for Imputer
+        X_train_2d, shape_tr = flatten_if_3d(X_train)
+        X_val_2d, shape_val = flatten_if_3d(X_val)
+        X_test_2d, shape_test = flatten_if_3d(X_test)
+
+        # 2. Fit and Transform
+        # Fit ONLY on train to prevent leakage
+        X_train_imputed_2d = imputer.fit_transform(X_train_2d)
+        
+        # Transform Val and Test (if they exist)
+        X_val_imputed_2d = imputer.transform(X_val_2d) if X_val_2d is not None else None
+        X_test_imputed_2d = imputer.transform(X_test_2d) if X_test_2d is not None else None
+
+        # 3. Reshape back to original dimensions
+        X_train_final = restore_if_3d(X_train_imputed_2d, shape_tr)
+        X_val_final = restore_if_3d(X_val_imputed_2d, shape_val)
+        X_test_final = restore_if_3d(X_test_imputed_2d, shape_test)
+
+        # --- DIAGNOSTIC CHECK ---
+        print("\n" + "-"*30)
+        print("🔍 IMPUTATION DIAGNOSIS")
+        
+        # 1. Check for remaining NaNs (Should be 0)
+        total_nans = np.isnan(X_train_final).sum()
+        print(f"Total NaNs remaining in X_train: {total_nans}")
+
+        # 2. Check Sensor Integrity (Assuming sensors are early columns)
+        # Check if sensor zeros were preserved
+        sensor_sample = X_train_final.reshape(-1, X_train_final.shape[-1])[:, :5]
+        print(f"Sensor sample (first 5 cols) - Mean: {np.mean(sensor_sample):.4f}")
+        
+        # 3. Check Self-Report Richness (MissForest Activity)
+        # Check the variance of the report variables (e.g., mood lags)
+        # If std > 0, MissForest is actually predicting values, not just filling zeros.
+        report_sample = X_train_final.reshape(-1, X_train_final.shape[-1])[:, 16] # Use your mood index
+        print(f"Report Imputation (Col 16) - Std Dev: {np.std(report_sample):.4f}")
+        print("-"*30 + "\n")
+
+        return X_train_final, X_val_final, X_test_final
+
+    def _trim_individual_series(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Trims leading empty data and trailing data without targets for each user.
+        Assumes df is in wide format with 'id' as a column and 'time' as index.
+        """
+        trimmed_dfs = []
+        
+        # Group by individual ID
+        for user_id, group in df.groupby('id'):
+            values = group.values # Converting to numpy for your logic
+            
+            # --- Leading Trim ---
+            # Find first row with sensor activity (cols 0-13) AND a valid mood (col 16)
+            start_idx = 0
+            for t in range(values.shape[0]):
+                # Check if sensors (first 13 cols) are NOT all zero
+                if not np.isnan(values[t, 1:14]).all():
+                    # Now find the first valid mood from this point forward
+                    found_start = False
+                    for t2 in range(t, values.shape[0]):
+                        if not np.isnan(values[t2, 17]):
+                            start_idx = t2
+                            found_start = True
+                            break
+                    if found_start:
+                        break
+            
+            # --- Trailing Trim ---
+            # Find the last index with a valid mood
+            end_idx = values.shape[0]
+            for t in range(values.shape[0] - 1, start_idx, -1):
+                if not np.isnan(values[t, 16]):
+                    end_idx = t + 1 # +1 for inclusive slicing
+                    break
+            
+            # Apply the slice to the pandas group
+            trimmed_dfs.append(group.iloc[start_idx:end_idx])
+        
+        return pd.concat(trimmed_dfs).sort_index()
 
     def _scale_features(self, X_train, X_val, X_test):
         # Implement your scaling logic here
@@ -175,7 +284,9 @@ class BasePipeline:
         time_test_full = time_ord[split_pt:]
 
         # Prepare final holdout test set
+        _, _, X_test_full = self._impute_multivariate(X_train_full, None, X_test_full)
         _, _, X_test_scaled_full = self._scale_features(None, None, X_test_full)
+        
         test_data = package_data(
             X_test_scaled_full,
             y_test_full,
@@ -237,6 +348,7 @@ class BasePipeline:
             X_tr_fold, X_val_fold = X_train_full[tr_fold_idx], X_train_full[val_fold_idx]
 
             # Independently scale them to prevent data leakage
+            X_tr_fold, X_val_fold, _ = self._impute_multivariate(X_tr_fold, X_val_fold, None)
             x_tr_fold_scaled, x_val_fold_scaled, _= self._scale_features(X_tr_fold, X_val_fold, None)
 
             # Package into DataLoaders, or dicts if tabular
@@ -350,7 +462,9 @@ class TabularPipeline(BasePipeline):
         y_series, y_dtype = self.process_targets(y_series)
 
         # 5. Convert to Numpy arrays
-        X_arr = np.nan_to_num(X_valid.values, nan=0.0)
+        # DEBUG
+        # X_arr = np.nan_to_num(X_valid.values, nan=0.0)
+        X_arr = X_valid.values
         y_arr = y_valid.values
         id_arr = id_valid.values
         
@@ -435,7 +549,10 @@ class TimeSeriesPipeline(BasePipeline):
                     seq_ids.append(user_id)
                     seq_times.append(int(target_time.timestamp()))
                     
-        X_arr = np.nan_to_num(np.array(seq_X), nan=0.0)
+        # DEBUG
+        
+        # X_arr = np.nan_to_num(np.array(seq_X), nan=0.0)
+        X_arr = np.array(seq_X)
         y_arr = np.array(seq_y)
         id_arr = np.array(seq_ids)
         time_arr = np.array(seq_times)
@@ -450,7 +567,7 @@ class TimeSeriesPipeline(BasePipeline):
             input_dim=self.input_dim, 
             hidden_dim=hidden_dim, 
             output_dim=self.num_classes, 
-            num_ids=self.num_ids, 
+            num_users=self.num_users, 
             embed_dim=embed_dim,
             dropout_rate=dropout_rate
         )

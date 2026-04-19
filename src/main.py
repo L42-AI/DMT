@@ -10,6 +10,10 @@ def main():
     visualiser = Visualiser(data)
     analyser = Analyser(data)
 
+    # Data Exploration 
+    visualiser.descriptives()
+    visualiser.report_variable_distributions(save=True)
+
     analyser.process_outliers()
     analyser.aggregate.time_data(interval=1, unit='D', inplace=True)
     analyser.aggregate.activity(interval=1, unit='D', inplace=True)
@@ -17,11 +21,12 @@ def main():
     analyser.aggregate.reported_data(inplace=True)
     analyser.apply_scaling(inplace=True)
 
-    analyser.data.to_csv('data/aggregated_data.csv', index=False)
-    analyser.impute(delete=False, catsi=True, epochs=10)
-    analyser.data.to_csv('data/aggregated_data_after_impute.csv', index=False)
 
-    print(analyser.data.isna().any())    
+    # analyser.data.to_csv('data/aggregated_data.csv', index=False)
+    # analyser.impute(delete=False, catsi=True, epochs=10)
+    # analyser.data.to_csv('data/aggregated_data_after_impute.csv', index=False)
+
+    # print(analyser.data.isna().any())    
 
     # sys.exit(0)
 
