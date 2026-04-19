@@ -161,6 +161,7 @@ class BasePipeline:
 
     def _scale_features(self, X_train, X_val, X_test):
         from sklearn.preprocessing import StandardScaler
+        import warnings
         import numpy as np
 
         scaler = StandardScaler()
@@ -175,10 +176,12 @@ class BasePipeline:
                 B, S, F = X.shape
                 X = X.reshape(-1, F)
             
-            if is_fit:
-                X_scaled = scaler.fit_transform(X)
-            else:
-                X_scaled = scaler.transform(X)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                if is_fit:
+                    X_scaled = scaler.fit_transform(X)
+                else:
+                    X_scaled = scaler.transform(X)
                 
             if was_3d:
                 X_scaled = X_scaled.reshape(B, S, F)
@@ -587,7 +590,7 @@ class TabularPipeline(BasePipeline):
                 'n_estimators': 100,
                 'learning_rate': 0.001,
                 'max_depth': 3,
-                'objective': 'multi:softprob',
+                'objective': 'multi:softmax',
                 'num_class': int(self.num_classes),
                 'eval_metric': 'mlogloss',
             }
