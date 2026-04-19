@@ -12,7 +12,7 @@ def _get_numpy_predictions(preds, ids, times, freq='D'):
     # --- AUTO-DETECT CLASSIFICATION VS REGRESSION ---
     if preds.ndim > 1 and preds.shape[1] > 1:
         # Handle outputs from models like predict_proba()
-        preds = np.argmax(preds, axis=1) / 9.0
+        preds = np.argmax(preds, axis=1) + 1
     else:
         preds = preds.flatten()
         
@@ -24,7 +24,7 @@ def _get_numpy_predictions(preds, ids, times, freq='D'):
     
     # Format time and rescale (0.0-1.0 -> 1-10)
     df['period'] = pd.to_datetime(df['timestamp'] * 1000, unit='s').dt.floor(freq)
-    df['predicted_mood'] = df['predicted_mood'] * 9 + 1
+    df['predicted_mood'] = df['predicted_mood']
     
     return df.groupby(['id', 'period'])['predicted_mood'].mean().reset_index()
 
@@ -42,7 +42,7 @@ def _get_predictions(model, dataloader, device, freq='D'):
             # If output has multiple columns, it's outputting class probabilities/logits
             if outputs.dim() > 1 and outputs.shape[1] > 1:
                 # Take the most probable class (0-9) and normalize it to (0.0-1.0)
-                batch_preds = outputs.argmax(dim=1).float() / 9.0
+                batch_preds = outputs.argmax(dim=1).float() + 1
             else:
                 batch_preds = outputs
                 
@@ -54,7 +54,7 @@ def _get_predictions(model, dataloader, device, freq='D'):
     
     # Format time and rescale (0.0-1.0 -> 1-10)
     df['period'] = pd.to_datetime(df['timestamp'], unit='s').dt.floor(freq)
-    df['predicted_mood'] = df['predicted_mood'] * 9 + 1
+    df['predicted_mood'] = df['predicted_mood']
     
     return df.groupby(['id', 'period'])['predicted_mood'].mean().reset_index()
 
@@ -65,7 +65,7 @@ def _get_ground_truth(analyser, freq='D'):
     # Format ID, floor time, and rescale
     df['id'] = df['id'].apply(lambda x: int(str(x)[-2:])).astype('category').cat.codes
     df['period'] = pd.to_datetime(df['time'], unit='s').dt.floor(freq)
-    df['actual_mood'] = df['value'] * 9 + 1
+    df['actual_mood'] = df['value']
     
     return df.groupby(['id', 'period'])['actual_mood'].mean().reset_index()
 

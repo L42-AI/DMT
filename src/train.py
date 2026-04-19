@@ -25,7 +25,7 @@ NUM_CLASSES = 10
 SEQ_LEN = int(7 * 1 / INTERVAL) if UNIT == 'D' else int(7 * 24 / INTERVAL)
 EMBEDDING_DIM = 6
 HIDDEN_DIM = 32
-DROP_RATE = 0.5
+DROP_RATE = 0.7
 
 # Training hyperparameters
 LR = 0.001

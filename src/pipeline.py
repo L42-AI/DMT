@@ -170,7 +170,7 @@ class BasePipeline:
                 
             # 2. Prevent Leakage (Shift first!)
             df[f'prev_{col}'] = df.groupby('id')[col].shift(1)
-            df[f'prev_{col}'] = df.groupby('id')[f'prev_{col}'].ffill().fillna(0.5)
+            df[f'prev_{col}'] = df.groupby('id')[f'prev_{col}'].ffill().fillna(1)
 
             # 3. Calculate Age (Hours since last report)
             # We find where reports exist
@@ -198,7 +198,7 @@ class BasePipeline:
 
     def process_targets(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
         if self.CLASSIFICATION:
-            bins = np.linspace(0.0, 1.0, self.num_classes + 1)
+            bins = np.linspace(1.0, 10.0, self.num_classes + 1)
             y_series = pd.cut(y_series, bins=bins, labels=False, include_lowest=True)
             y_dtype = torch.long
         else:
@@ -617,5 +617,6 @@ class TimeSeriesClassification(ClassificationPipelineMixin, TimeSeriesPipeline):
 
 class TabularRegression(RegressionPipelineMixin, TabularPipeline):
     pass
+
 class TimeSeriesRegression(RegressionPipelineMixin, TimeSeriesPipeline):
     pass

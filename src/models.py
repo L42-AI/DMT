@@ -49,7 +49,7 @@ class RandomRegressionBaseline(BaseMLModel):
         batch_size = x.size(0)
         
         # 1. Generate the random scores (ensure it's on the correct device)
-        rand_scores = torch.rand(batch_size, self.output_dim, device=x.device) * 9 + 1 
+        rand_scores = torch.rand(batch_size, self.output_dim, device=x.device)
         
         # 2. Extract embeddings to get access to the model's trainable parameters
         embeds = self.user_embedding(ids)
