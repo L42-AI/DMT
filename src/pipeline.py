@@ -29,19 +29,10 @@ class BasePipeline:
         """ Pivots the dataframe, resets ID to a column, and sets Time as the sole index. """
         wide_format = self.analyser.data.pivot_table(index=['time', 'id'], columns='variable', values='value')
         wide_format = wide_format.reset_index(level='id')
-        id_mapping = dict(enumerate(wide_format['id'].astype('category').cat.categories))
 
         wide_format['id'] = wide_format['id'].apply(lambda x: int(str(x)[-2:]))
         
-        
         wide_format['id'] = wide_format['id'].astype('category').cat.codes
-
-        print(f"DEBUG: Before Trimming - Total Rows: {len(wide_format)}")
-        wide_format = self._trim_individual_series(wide_format)
-        print(f"DEBUG: After Trimming  - Total Rows: {len(wide_format)}")
-        print(wide_format.head())
-        print(wide_format.columns)
-        print(id_mapping)
         
         return wide_format.sort_index()
 
@@ -118,46 +109,6 @@ class BasePipeline:
         print("-"*30 + "\n")
 
         return X_train_final, X_val_final, X_test_final
-
-    def _trim_individual_series(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Trims leading empty data and trailing data without targets for each user.
-        Assumes df is in wide format with 'id' as a column and 'time' as index.
-        """
-        trimmed_dfs = []
-        
-        # Group by individual ID
-        for user_id, group in df.groupby('id'):
-            values = group.values # Converting to numpy for your logic
-            
-            # --- Leading Trim ---
-            # Find first row with sensor activity (cols 0-13) AND a valid mood (col 16)
-            start_idx = 0
-            for t in range(values.shape[0]):
-                # Check if sensors (first 13 cols) are NOT all zero
-                if not np.isnan(values[t, 1:14]).all():
-                    # Now find the first valid mood from this point forward
-                    found_start = False
-                    for t2 in range(t, values.shape[0]):
-                        if not np.isnan(values[t2, 17]):
-                            start_idx = t2
-                            found_start = True
-                            break
-                    if found_start:
-                        break
-            
-            # --- Trailing Trim ---
-            # Find the last index with a valid mood
-            end_idx = values.shape[0]
-            for t in range(values.shape[0] - 1, start_idx, -1):
-                if not np.isnan(values[t, 16]):
-                    end_idx = t + 1 # +1 for inclusive slicing
-                    break
-            
-            # Apply the slice to the pandas group
-            trimmed_dfs.append(group.iloc[start_idx:end_idx])
-        
-        return pd.concat(trimmed_dfs).sort_index()
 
     def _scale_features(self, X_train, X_val, X_test):
         # Implement your scaling logic here
@@ -613,7 +564,67 @@ class TimeSeriesClassification(ClassificationPipelineMixin, TimeSeriesPipeline):
     pass
 
 class TabularRegression(RegressionPipelineMixin, TabularPipeline):
-    pass
+
+    def _trim_individual_series(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Trims leading empty data and trailing data without targets for each user.
+        Assumes df is in wide format with 'id' as a column and 'time' as index.
+        """
+        trimmed_dfs = []
+        
+        # Group by individual ID
+        for user_id, group in df.groupby('id'):
+            values = group.values # Converting to numpy for your logic
+            
+            # --- Leading Trim ---
+            # Find first row with sensor activity (cols 0-13) AND a valid mood (col 16)
+            start_idx = 0
+            for t in range(values.shape[0]):
+                # Check if sensors (first 13 cols) are NOT all zero
+                if not np.isnan(values[t, 1:14]).all():
+                    # Now find the first valid mood from this point forward
+                    found_start = False
+                    for t2 in range(t, values.shape[0]):
+                        if not np.isnan(values[t2, 17]):
+                            start_idx = t2
+                            found_start = True
+                            break
+                    if found_start:
+                        break
+            
+            # --- Trailing Trim ---
+            # Find the last index with a valid mood
+            end_idx = values.shape[0]
+            for t in range(values.shape[0] - 1, start_idx, -1):
+                if not np.isnan(values[t, 16]):
+                    end_idx = t + 1 # +1 for inclusive slicing
+                    break
+            
+            # Apply the slice to the pandas group
+            trimmed_dfs.append(group.iloc[start_idx:end_idx])
+        
+        return pd.concat(trimmed_dfs).sort_index()
+
+
+    def _prepare_base_data(self) -> pd.DataFrame:
+        """ Pivots the dataframe, resets ID to a column, and sets Time as the sole index. """
+        wide_format = self.analyser.data.pivot_table(index=['time', 'id'], columns='variable', values='value')
+        wide_format = wide_format.reset_index(level='id')
+        id_mapping = dict(enumerate(wide_format['id'].astype('category').cat.categories))
+
+        wide_format['id'] = wide_format['id'].apply(lambda x: int(str(x)[-2:]))
+        
+        
+        wide_format['id'] = wide_format['id'].astype('category').cat.codes
+
+        print(f"DEBUG: Before Trimming - Total Rows: {len(wide_format)}")
+        wide_format = self._trim_individual_series(wide_format)
+        print(f"DEBUG: After Trimming  - Total Rows: {len(wide_format)}")
+        print(wide_format.head())
+        print(wide_format.columns)
+        print(id_mapping)
+        
+        return wide_format.sort_index()
 
 class TimeSeriesRegression(RegressionPipelineMixin, TimeSeriesPipeline):
     pass
