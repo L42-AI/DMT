@@ -22,6 +22,9 @@ def _get_numpy_predictions(preds, ids, times, freq='D', class_mapping=None):
         
     df = pd.DataFrame({'id': ids, 'timestamp': times, 'predicted_mood': preds})
     
+    # check for correct scale of timestamps and convert if necessary
+    if df['timestamp'].max() > 1e12:  # Likely in milliseconds
+        df['timestamp'] = df['timestamp'] / 1000
     df['period'] = pd.to_datetime(df['timestamp'] * 1000, unit='s').dt.floor(freq)
     return df.groupby(['id', 'period'])['predicted_mood'].mean().reset_index()
 
