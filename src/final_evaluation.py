@@ -8,13 +8,21 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 def _get_numpy_predictions(preds, ids, times, freq='D'):
     """Formats raw numpy arrays into the standardized prediction DataFrame."""
+    
+    # --- AUTO-DETECT CLASSIFICATION VS REGRESSION ---
+    if preds.ndim > 1 and preds.shape[1] > 1:
+        # Handle outputs from models like predict_proba()
+        preds = np.argmax(preds, axis=1) / 9.0
+    else:
+        preds = preds.flatten()
+        
     df = pd.DataFrame({
         'id': ids, 
         'timestamp': times, 
         'predicted_mood': preds
     })
-
-    # Format time and rescale (0-1 -> 1-10)
+    
+    # Format time and rescale (0.0-1.0 -> 1-10)
     df['period'] = pd.to_datetime(df['timestamp'] * 1000, unit='s').dt.floor(freq)
     df['predicted_mood'] = df['predicted_mood'] * 9 + 1
     
@@ -28,13 +36,23 @@ def _get_predictions(model, dataloader, device, freq='D'):
     with torch.no_grad():
         for batch in dataloader:
             id_t, X_t, _, time_t = [b.to(device) for b in batch]
+            outputs = model(id_t, X_t)
+            
+            # --- AUTO-DETECT CLASSIFICATION VS REGRESSION ---
+            # If output has multiple columns, it's outputting class probabilities/logits
+            if outputs.dim() > 1 and outputs.shape[1] > 1:
+                # Take the most probable class (0-9) and normalize it to (0.0-1.0)
+                batch_preds = outputs.argmax(dim=1).float() / 9.0
+            else:
+                batch_preds = outputs
+                
             ids.extend(id_t.cpu().numpy())
             times.extend(time_t.cpu().numpy())
-            preds.extend(model(id_t, X_t).cpu().numpy().flatten())
+            preds.extend(batch_preds.cpu().numpy().flatten())
             
     df = pd.DataFrame({'id': ids, 'timestamp': times, 'predicted_mood': preds})
     
-    # Format time and rescale (0-1 -> 1-10)
+    # Format time and rescale (0.0-1.0 -> 1-10)
     df['period'] = pd.to_datetime(df['timestamp'], unit='s').dt.floor(freq)
     df['predicted_mood'] = df['predicted_mood'] * 9 + 1
     
