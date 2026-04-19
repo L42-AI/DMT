@@ -19,11 +19,11 @@ import data as _data
 # Data hyperparameters
 INTERVAL = 1
 UNIT = 'H'
-NUM_CLASSES = 10
+NUM_CLASSES = 5
 
 # Model hyperparameters
 SEQ_LEN = int(7 * 1 / INTERVAL) if UNIT == 'D' else int(7 * 24 / INTERVAL)
-EMBEDDING_DIM = 6
+EMBEDDING_DIM = 2
 HIDDEN_DIM = 32
 DROP_RATE = 0.7
 
@@ -32,6 +32,20 @@ LR = 0.001
 BATCH_SIZE = 32
 WEIGHT_DECAY = 1e-3
 EPOCHS = 100
+
+# XGBoost hyperparameters
+XGBOOST_PARAMS = {
+    'n_estimators': 100,
+    'learning_rate': 0.01,
+    'max_depth': 3,
+    'subsample': 0.8,
+    'colsample_bytree': 0.8,
+}
+
+# Walk-forward validation hyperparameters
+N_SPLITS = 5
+GAP = 0  # No gap between train and val for now, but can be adjusted to simulate delayed feedback scenarios
+TEST_RATIO = 0.2  # Use the last 20% of the data as a final held-out test set after walk-forward splits     
 
 def _extract_numpy_from_loader(loader: torch.utils.data.DataLoader) -> tuple[np.ndarray, np.ndarray]:
     """Helper function to convert a DataLoader back to NumPy arrays."""
@@ -74,7 +88,7 @@ def prepare_data() -> Analyser:
 
     # Quick diagnostic check
     missing_data = analyser.data.isna().any().sum()
-    visualiser.heatmap_missing_values_per_id(save=True)
+    visualiser.heatmap_missing_values_per_id(title = "Percentage of Missing Values in Individuals, after aggregation", save=True)
     print(f"Columns with missing data after imputation: {missing_data}")
     return analyser
 
@@ -323,7 +337,7 @@ def walk_forward_train(analyser, tabular=False):
     # get_walk_forward_loaders returns (folds, test_loader)
     # if tabular, folds is a list of dicts with 'train' and 'val' keys containing NumPy arrays
     # if time-series, folds is a list of tuples (train_loader, val_loader)
-    folds, test_data = pipeline.get_walk_forward_loaders(n_splits=5, gap=pipeline.max_memory, test_ratio=0.15, tabular=tabular)
+    folds, test_data = pipeline.get_walk_forward_loaders(n_splits=N_SPLITS, gap=GAP, test_ratio=TEST_RATIO, tabular=tabular)
 
     # DEBUG: Print class distribution for each fold to check for missing classes
     # plot_fold_class_distribution(folds, tabular=tabular)
@@ -343,7 +357,7 @@ def walk_forward_train(analyser, tabular=False):
             val_set = fold_content['val']
 
             # Build and train the XGBoost model on the current fold
-            model = pipeline.build_xgboost_model()
+            model = pipeline.build_xgboost_model(**XGBOOST_PARAMS)
             print(f"Fitting XGBoost on {len(train_set['X'])} training samples...")
             model.fit(
                 train_set['X'], 
@@ -404,8 +418,8 @@ def walk_forward_train(analyser, tabular=False):
 
 def main():
     analyser = prepare_data()
-    # walk_forward_train(analyser, tabular=False)
-    train_classification_model(analyser, save_plotting=True)
+    walk_forward_train(analyser, tabular=True)
+    # train_classification_model(analyser, save_plotting=True)
     # train_random_forest_regression(analyser, save_plotting=True)
     # train_regression_model(analyser, save_plotting=True)
 

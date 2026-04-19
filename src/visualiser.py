@@ -194,10 +194,11 @@ class Visualiser:
         else:
             plt.show()
 
-    def heatmap_missing_values_per_id(self, date: bool = False, save: bool = False):
+    def heatmap_missing_values_per_id(self, title, date: bool = False, save: bool = False):
         """Visualize the presence of NAs amongs individual/variable or individual/date combinations
 
         Args:
+            title (str): The title for the heatmap.
             date (bool, optional): Whether you want to visualize NAs in dates instead of variables. Defaults to False.
             save (bool, optional): Whether you want to save instead of plot. Defaults to False.
         """
@@ -225,7 +226,7 @@ class Visualiser:
                     linewidths=.5,
                     linecolor="lightgrey",
                     cbar_kws={'label': 'Percentage Missing (%)'})
-        plt.title("Percentage of Missing Values in Individuals")
+        plt.title(title)
         plt.xlabel("Variable")
         plt.ylabel("User")
 
