@@ -22,8 +22,8 @@ UNIT = 'H'
 NUM_CLASSES = 3
 
 # Model hyperparameters
-SEQ_LEN = int(7 * 1 / INTERVAL) if UNIT == 'D' else int(7 * 24 / INTERVAL)
-EMBEDDING_DIM = 8
+SEQ_LEN = 672
+EMBEDDING_DIM = 4
 HIDDEN_DIM = 32
 DROP_RATE = 0.7
 
