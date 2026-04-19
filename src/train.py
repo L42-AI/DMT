@@ -465,6 +465,8 @@ def train_model(analyser, classification: bool, tabular: bool, save_plotting: bo
             model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
             # test_preds = model.predict(X_test)
             test_preds = model.predict_proba(X_test)
+            accuracy = np.argmax(test_preds, axis=1) == y_test
+            print(f"Test Accuracy: {accuracy.mean():.2%}")
             model_name = "XGBoost"
         else:
             print("Model: Random Forest Regressor")
@@ -530,7 +532,7 @@ def main():
     # train_classification_model(analyser, save_plotting=True)
     # train_random_forest_regression(analyser, save_plotting=True)
     # train_regression_model(analyser, save_plotting=True)
-    train_model(analyser, classification=True, tabular=True, save_plotting=False)
+    train_model(analyser, classification=True, tabular=False, save_plotting=False)
 
 if __name__ == "__main__":
     main()
