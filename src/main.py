@@ -12,14 +12,19 @@ def main():
 
     # Data Exploration 
     visualiser.descriptives()
-    visualiser.report_variable_distributions(save=True)
+    # visualiser.heatmap_missing_values_per_id()
+    # visualiser.report_variable_distributions(save=True)
 
     analyser.process_outliers()
-    analyser.aggregate.time_data(interval=1, unit='D', inplace=True)
-    analyser.aggregate.activity(interval=1, unit='D', inplace=True)
-    analyser.aggregate.communication_events(interval=1, unit='D', inplace=True)
-    analyser.aggregate.reported_data(inplace=True)
+    analyser.aggregate.time_data(interval=1, unit='H', inplace=True)
+    analyser.aggregate.activity(interval=1, unit='H', inplace=True)
+    analyser.aggregate.communication_events(interval=1, unit='H', inplace=True)
+    analyser.aggregate.reported_data(interval=1, unit='H', inplace=True)
     analyser.apply_scaling(inplace=True)
+
+    visualiser.data = analyser.data
+    visualiser.heatmap_missing_values_per_id(title = "Percentage of Missing Values in Individuals, after aggregation")
+    # visualiser.show_na_distribution(save=True)
 
 
     # analyser.data.to_csv('data/aggregated_data.csv', index=False)

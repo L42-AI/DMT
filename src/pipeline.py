@@ -96,7 +96,9 @@ class BasePipeline:
     def _clean_data(self, X_df):
         return X_df
     
-    def _impute_multivariate(self, X_train, X_val=None, X_test=None):
+    def _impute_multivariate(self, X_train, X_val=None, X_test=None, turn_off = False):
+        if turn_off:
+            return X_train, X_val, X_test
         # 1. Initialize the MissForest proxy (IterativeImputer with RF)
         imputer = IterativeImputer(
             estimator=RandomForestRegressor(n_estimators=10, n_jobs=-1),
@@ -158,8 +160,35 @@ class BasePipeline:
         return X_train_final, X_val_final, X_test_final
 
     def _scale_features(self, X_train, X_val, X_test):
-        # Implement your scaling logic here
-        return X_train, X_val, X_test
+        from sklearn.preprocessing import StandardScaler
+        import numpy as np
+
+        scaler = StandardScaler()
+        
+        # Helper to reshape for scaling
+        def _reshape_and_scale(X, is_fit=False):
+            if X is None:
+                return None
+            was_3d = False
+            if X.ndim == 3:
+                was_3d = True
+                B, S, F = X.shape
+                X = X.reshape(-1, F)
+            
+            if is_fit:
+                X_scaled = scaler.fit_transform(X)
+            else:
+                X_scaled = scaler.transform(X)
+                
+            if was_3d:
+                X_scaled = X_scaled.reshape(B, S, F)
+            return X_scaled
+
+        X_train_scaled = _reshape_and_scale(X_train, is_fit=True) if X_train is not None else None
+        X_val_scaled = _reshape_and_scale(X_val, is_fit=False) if X_val is not None else None
+        X_test_scaled = _reshape_and_scale(X_test, is_fit=False) if X_test is not None else None
+        
+        return X_train_scaled, X_val_scaled, X_test_scaled
     
     def _engineer_leaky_covariates(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy().sort_values(['id', 'time'])
@@ -313,9 +342,6 @@ class BasePipeline:
         X_arr, y_arr, id_arr, time_arr, y_dtype = self._build_tensors(X_df, y_series, id_series)
         self.input_dim = X_arr.shape[-1]
         
-        """ 
-        TESTING
-        """
         # Global chronological ordering across all users
         global_order = np.argsort(time_arr, kind='mergesort')
         X_ord = X_arr[global_order]
@@ -340,8 +366,8 @@ class BasePipeline:
         y_test_full = self.transform_targets(y_test_full)
 
         # Prepare final holdout test set
-        _, _, X_test_full = self._impute_multivariate(X_train_full, None, X_test_full)
-        _, _, X_test_scaled_full = self._scale_features(None, None, X_test_full)
+        X_train_full_imputed, _, X_test_full = self._impute_multivariate(X_train_full, None, X_test_full, turn_off=True)
+        _, _, X_test_scaled_full = self._scale_features(X_train_full_imputed, None, X_test_full)
         
         test_data = package_data(
             X_test_scaled_full,
@@ -350,9 +376,7 @@ class BasePipeline:
             time_test_full,
             shuffle=False
         )
-        """ 
-        END TESTING
-        """
+
 
         """
         PREVIOUS USER-LEVEL SPLIT (RETAINED FOR REFERENCE)
@@ -404,7 +428,7 @@ class BasePipeline:
             X_tr_fold, X_val_fold = X_train_full[tr_fold_idx], X_train_full[val_fold_idx]
 
             # Independently scale them to prevent data leakage
-            X_tr_fold, X_val_fold, _ = self._impute_multivariate(X_tr_fold, X_val_fold, None)
+            X_tr_fold, X_val_fold, _ = self._impute_multivariate(X_tr_fold, X_val_fold, None, turn_off=True)
             x_tr_fold_scaled, x_val_fold_scaled, _= self._scale_features(X_tr_fold, X_val_fold, None)
 
             # Package into DataLoaders, or dicts if tabular
@@ -553,7 +577,7 @@ class TabularPipeline(BasePipeline):
         if self.num_classes == 2:
             defaults = {
                 'n_estimators': 100,
-                'learning_rate': 0.01,
+                'learning_rate': 0.001,
                 'max_depth': 3,
                 'objective': 'binary:logistic',
                 'eval_metric': 'logloss',
@@ -561,7 +585,7 @@ class TabularPipeline(BasePipeline):
         else:
             defaults = {
                 'n_estimators': 100,
-                'learning_rate': 0.01,
+                'learning_rate': 0.001,
                 'max_depth': 3,
                 'objective': 'multi:softprob',
                 'num_class': int(self.num_classes),
