@@ -524,7 +524,7 @@ class TimeSeriesPipeline(BasePipeline):
             input_dim=self.input_dim, 
             hidden_dim=hidden_dim, 
             output_dim=self.num_classes, 
-            num_users=self.num_users, 
+            num_ids=self.num_ids, 
             embed_dim=embed_dim,
             dropout_rate=dropout_rate
         )
