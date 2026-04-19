@@ -31,7 +31,7 @@ DROP_RATE = 0.7
 LR = 0.001
 BATCH_SIZE = 32
 WEIGHT_DECAY = 1e-3
-EPOCHS = 50
+EPOCHS = 20
 
 # XGBoost hyperparameters
 XGBOOST_PARAMS = {
@@ -507,6 +507,7 @@ def train_model(analyser, classification: bool, tabular: bool, seq_len=7, embed_
 
 def main():
     analyser = prepare_data()
+    # train_model(analyser, classification=True, tabular=True, save_plotting=True)
     walk_forward_train(analyser, tabular=True)
     # train_classification_model(analyser, save_plotting=True)
     # train_random_forest_regression(analyser, save_plotting=True)

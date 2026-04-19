@@ -266,4 +266,4 @@ class Trainer:
         print("Training Complete. Generating visuals...")
         
         # Draw the standard Learning Curves (Loss, RMSE, etc.)
-        self.plot_training_curves(save_history)
+        # self.plot_training_curves(save_history)
