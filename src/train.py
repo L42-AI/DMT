@@ -414,31 +414,22 @@ def walk_forward_train(analyser, tabular=False):
 
     return fold_results, test_metrics
 
-def train_model(analyser, classification: bool, tabular: bool, save_plotting: bool = False):
-    """
-    Unified training pipeline router.
-    
-    Args:
-        analyser: The Analyser object containing processed data.
-        classification (bool): True for Classification (3 classes), False for Regression (1-10 scale).
-        tabular (bool): True for tree-based models (XGBoost/RF), False for recurrent models (GRU).
-    """
+def train_model(analyser, classification: bool, tabular: bool, seq_len=7, embed_dim=8, windows=[3, 5], save_plotting: bool = False):
     task_str = "Classification" if classification else "Regression"
     mode_str = "Tabular" if tabular else "TimeSeries"
     
-    print("\n" + "="*45)
-    print(f"🚀 INITIALIZING PIPELINE: {mode_str} {task_str}")
-    print("="*45)
+    # We suppress prints during tuning so multi-core output doesn't turn into a messy wall of text
+    print(f"\n🚀 INITIALIZING PIPELINE: {mode_str} {task_str}")
 
-    # 1. Pipeline Routing
+    # 1. Pipeline Routing (USING THE NEW ARGUMENTS)
     if tabular and classification:
-        pipeline = TabularClassification(analyser, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE, windows=[3, 5])
+        pipeline = TabularClassification(analyser, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE, windows=windows)
     elif tabular and not classification:
-        pipeline = TabularRegression(analyser, batch_size=BATCH_SIZE, lookahead=24)
+        pipeline = TabularRegression(analyser, batch_size=BATCH_SIZE, lookahead=24, windows=windows)
     elif not tabular and classification:
-        pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE)
-    else:  # not tabular and not classification
-        pipeline = TimeSeriesRegression(analyser, seq_len=SEQ_LEN, batch_size=BATCH_SIZE)
+        pipeline = TimeSeriesClassification(analyser, seq_len=seq_len, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE)
+    else:
+        pipeline = TimeSeriesRegression(analyser, seq_len=seq_len, batch_size=BATCH_SIZE)
 
     # ==========================================
     # ROUTE A: TABULAR (XGBoost / Random Forest)
@@ -490,7 +481,7 @@ def train_model(analyser, classification: bool, tabular: bool, save_plotting: bo
         sample_id, sample_X, sample_y, sample_time = next(iter(train_loader))
         print(f"Model: GRU (Detected {sample_X.shape[-1]} input features)")
 
-        model = pipeline.build_model(hidden_dim=HIDDEN_DIM, embed_dim=EMBEDDING_DIM, dropout_rate=DROP_RATE)
+        model = pipeline.build_model(hidden_dim=HIDDEN_DIM, embed_dim=embed_dim, dropout_rate=DROP_RATE)
         optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
         
         # Route Loss Function
@@ -510,7 +501,7 @@ def train_model(analyser, classification: bool, tabular: bool, save_plotting: bo
         )
 
     # 3. Final Outputs
-    plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
+    # plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
     return results_df, final_mse, final_mae
 
 
