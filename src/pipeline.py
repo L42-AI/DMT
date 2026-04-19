@@ -24,6 +24,7 @@ class BasePipeline:
         self.batch_size = batch_size
         self.num_ids = None
         self.input_dim = None
+        self.class_mapping = None
 
 
     def _trim_individual_series(self, df: pd.DataFrame) -> pd.DataFrame:
