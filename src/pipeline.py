@@ -196,7 +196,7 @@ class BasePipeline:
     def _build_tensors(self, X_df, y_series, id_series):
         raise NotImplementedError()
 
-    def process_targets(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
+    def process_targets_l(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
         if self.CLASSIFICATION:
             bins = np.linspace(1.0, 10.0, self.num_classes + 1)
             binned = pd.cut(y_series, bins=bins, labels=False, include_lowest=True)
@@ -208,7 +208,7 @@ class BasePipeline:
             y_dtype = torch.float32
         return y_series, y_dtype
 
-    def process_targets_q(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
+    def process_targets(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
         """ Make quantile cut bins for classification or return float dtype for regression. """
         if self.CLASSIFICATION:
             y_binned = pd.qcut(y_series, q=self.num_classes, labels=False, duplicates='drop')
@@ -220,6 +220,39 @@ class BasePipeline:
             self.class_mapping = None
             y_dtype = torch.float32
         return y_series, y_dtype
+
+    def fit_transform_targets(self, y_train: np.ndarray) -> np.ndarray:
+        """ Fits quantile bins strictly on training data to prevent leakage. """
+        if not self.CLASSIFICATION:
+            self.class_mapping = None
+            return y_train
+
+        # FIT & TRANSFORM (Training Data Only)
+        y_binned, self.bin_edges = pd.qcut(
+            y_train.flatten(), q=self.num_classes, labels=False, duplicates='drop', retbins=True
+        )
+        
+        # Replace outer edges with infinity so unseen test extremes don't become NaNs
+        self.bin_edges[0] = -float('inf')
+        self.bin_edges[-1] = float('inf')
+
+        # Save the centroids for evaluation mapping
+        self.class_mapping = pd.Series(y_train.flatten()).groupby(y_binned).mean().to_dict()
+
+        return y_binned
+
+    def transform_targets(self, y_eval: np.ndarray) -> np.ndarray:
+        """ Transforms validation/test data using the boundaries learned from train. """
+        if not self.CLASSIFICATION:
+            return y_eval
+            
+        if not hasattr(self, 'bin_edges'):
+            raise ValueError("You must run fit_transform_targets on training data first!")
+        
+        # TRANSFORM ONLY (Validation/Test Data)
+        y_binned = pd.cut(y_eval.flatten(), bins=self.bin_edges, labels=False, include_lowest=True)
+        
+        return y_binned
 
     def get_walk_forward_loaders(
             self, 
@@ -301,6 +334,9 @@ class BasePipeline:
         y_test_full = y_ord[split_pt:]
         id_test_full = id_ord[split_pt:]
         time_test_full = time_ord[split_pt:]
+
+        y_train_pool = self.fit_transform_targets(y_train_pool)
+        y_test_full = self.transform_targets(y_test_full)
 
         # Prepare final holdout test set
         _, _, X_test_full = self._impute_multivariate(X_train_full, None, X_test_full)
@@ -409,6 +445,10 @@ class BasePipeline:
         X_val, y_val, id_val, time_val = X_arr[val_idx], y_arr[val_idx], id_arr[val_idx], time_arr[val_idx]
         X_test, y_test, id_test, time_test = X_arr[test_idx], y_arr[test_idx], id_arr[test_idx], time_arr[test_idx]
 
+        y_train = self.fit_transform_targets(y_train)
+        y_val = self.transform_targets(y_val)
+        y_test = self.transform_targets(y_test)
+
         X_train, X_val, X_test = self._scale_features(X_train, X_val, X_test)
 
         # 8. Package into PyTorch DataLoaders
@@ -478,7 +518,7 @@ class TabularPipeline(BasePipeline):
         id_valid = id_series[valid_mask]
         time_valid = time_future[valid_mask]
         
-        y_series, y_dtype = self.process_targets(y_series)
+        y_dtype = torch.long if self.CLASSIFICATION else torch.float32
 
         # 5. Convert to Numpy arrays
         # DEBUG
@@ -547,7 +587,7 @@ class TimeSeriesPipeline(BasePipeline):
         return df 
     
     def _build_tensors(self, X_df, y_series, id_series):
-        y_series, y_dtype = self.process_targets(y_series)
+        y_dtype = torch.long if self.CLASSIFICATION else torch.float32
 
         seq_X, seq_y, seq_ids, seq_times = [], [], [], []
         time_index = y_series.index

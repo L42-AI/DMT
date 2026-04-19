@@ -3,10 +3,10 @@ import numpy as np
 import pandas as pd
 
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+import matplotlib.pyplot as plt
 
 from pipeline import TimeSeriesClassification, TimeSeriesRegression, TabularClassification, TabularRegression
 from sklearn.ensemble import RandomForestRegressor
-from trainer import Trainer
 
 from trainer import Trainer
 from visualiser import Visualiser
@@ -33,7 +33,7 @@ BATCH_SIZE = 32
 WEIGHT_DECAY = 1e-3
 EPOCHS = 100
 
-def _extract_numpy_from_loader(loader):
+def _extract_numpy_from_loader(loader: torch.utils.data.DataLoader) -> tuple[np.ndarray, np.ndarray]:
     """Helper function to convert a DataLoader back to NumPy arrays."""
     all_X, all_y = [], []
     for _, X_tensor, y_tensor, *_ in loader:
@@ -77,10 +77,6 @@ def prepare_data() -> Analyser:
     visualiser.heatmap_missing_values_per_id(save=True)
     print(f"Columns with missing data after imputation: {missing_data}")
     return analyser
-
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
 
 def plot_fold_class_distribution(folds, tabular=True):
     rows = []
@@ -403,6 +399,8 @@ def walk_forward_train(analyser, tabular=False):
     print(f"Final Held-out Test Accuracy:    {test_metrics.get('acc', 0.0):.2%}")
 
     return fold_results, test_metrics
+
+
 
 def main():
     analyser = prepare_data()

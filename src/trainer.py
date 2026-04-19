@@ -71,7 +71,7 @@ class Trainer:
                 
                 outputs = self.model(ids, X)
                 loss = self.criterion(outputs, y)
-                
+
                 if is_train:
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
@@ -138,6 +138,7 @@ class Trainer:
         epochs = list(range(1, total_epochs + 1))
         
         # We need at least 4 epochs to make a zoom-in mathematically meaningful
+        show_zoom = False
         show_zoom = total_epochs >= 4
         zoom_idx = total_epochs // 2 if show_zoom else 0
         
