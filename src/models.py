@@ -99,3 +99,18 @@ class XGBoostClassifierWrapper:
 
     def predict_proba(self, X):
         return self.model.predict_proba(X)
+    
+class SimpleLSTM(BaseMLModel):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int,
+                 num_users: int, embed_dim: int = 5, dropout_rate: float = 0.5):
+        super().__init__(num_users, embed_dim)
+        self.lstm = torch.nn.LSTM(input_dim + embed_dim, hidden_dim, batch_first=True) # Creates LSTM layer
+        self.dropout = torch.nn.Dropout(dropout_rate) # Dropout layer
+        self.fc = torch.nn.Linear(hidden_dim, output_dim) # Final fully connected layer to produce output
+
+    def forward(self, ids, x): # Forward pass through the model
+        x_combined = self.inject_embeddings(ids, x)
+        out, _ = self.lstm(x_combined) # Sends full sequence through LSTM
+        last_step_out = out[:, -1, :] #Takes output form last time step
+        last_step_out = self.dropout(last_step_out) # output layer
+        return self.fc(last_step_out)

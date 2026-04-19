@@ -2,9 +2,11 @@ import torch
 import numpy as np
 import pandas as pd
 
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 from pipeline import TimeSeriesClassification, TimeSeriesRegression, TabularClassification, TabularRegression
+
 from trainer import Trainer
 from visualiser import Visualiser
 from analyser import Analyser
@@ -217,6 +219,81 @@ def evaluate_daily_assignment_loss(model, dataloader, device='cpu'):
     
     return daily_df, mse, mae
 
+def get_tabular_numpy_splits(analyser, lookahead=24, batch_size=32, train_ratio=0.7, val_ratio=0.15):
+    """
+    Uses the existing TabularRegression pipeline to prepare engineered tabular features,
+    then returns numpy arrays instead of PyTorch dataloaders.
+    """
+    pipeline = TabularRegression(analyser, batch_size=batch_size, lookahead=lookahead)
+
+    # Reuse your existing pipeline logic
+    df = pipeline._prepare_base_data()
+    df = pipeline._clean_data(df)
+    df = pipeline._engineer_features(df)
+
+    X_df, y_series, id_series = pipeline._split_x_y_id(df)
+    X_arr, y_arr, id_arr, time_arr, _ = pipeline._build_tensors(X_df, y_series, id_series)
+
+    # y comes out as shape [n, 1] for regression; sklearn wants [n]
+    y_arr = y_arr.ravel()
+
+    train_idx, val_idx, test_idx = [], [], []
+
+    for uid in np.unique(id_arr):
+        idx = np.where(id_arr == uid)[0]
+        n_user = len(idx)
+        train_end = int(n_user * train_ratio)
+        val_end = int(n_user * (train_ratio + val_ratio))
+
+        train_idx.extend(idx[:train_end])
+        val_idx.extend(idx[train_end:val_end])
+        test_idx.extend(idx[val_end:])
+
+    X_train, y_train, id_train, time_train = X_arr[train_idx], y_arr[train_idx], id_arr[train_idx], time_arr[train_idx]
+    X_val, y_val, id_val, time_val = X_arr[val_idx], y_arr[val_idx], id_arr[val_idx], time_arr[val_idx]
+    X_test, y_test, id_test, time_test = X_arr[test_idx], y_arr[test_idx], id_arr[test_idx], time_arr[test_idx]
+
+    return {
+        "pipeline": pipeline,
+        "X_train": X_train, "y_train": y_train, "id_train": id_train, "time_train": time_train,
+        "X_val": X_val, "y_val": y_val, "id_val": id_val, "time_val": time_val,
+        "X_test": X_test, "y_test": y_test, "id_test": id_test, "time_test": time_test,
+    }
+
+def evaluate_daily_assignment_loss_sklearn(preds, y_true, ids, times, model_name="Random Forest"):
+    """
+    Evaluates sklearn predictions by aggregating hourly predictions to daily averages,
+    exactly like the PyTorch evaluation function.
+    """
+    df = pd.DataFrame({
+        'id': ids,
+        'timestamp': times,
+        'predicted_mood': preds,
+        'actual_mood': y_true
+    })
+
+    df['date'] = pd.to_datetime(df['timestamp'], unit='s').dt.date
+
+    daily_df = df.groupby(['id', 'date']).agg({
+        'predicted_mood': 'mean',
+        'actual_mood': 'mean'
+    }).reset_index()
+
+    mse = mean_squared_error(daily_df['actual_mood'], daily_df['predicted_mood'])
+    mae = mean_absolute_error(daily_df['actual_mood'], daily_df['predicted_mood'])
+
+    print("\n" + "="*45)
+    print(f"🎯 FINAL DAILY ASSIGNMENT METRICS ({model_name})")
+    print("="*45)
+    print(f"Total Hourly Data Points: {len(df):,}")
+    print(f"Total Daily Aggregations: {len(daily_df):,}")
+    print("-" * 45)
+    print(f"Daily Mean Squared Error (MSE):  {mse:.4f}")
+    print(f"Daily Mean Absolute Error (MAE): {mae:.4f}")
+    print("="*45)
+
+    return daily_df, mse, mae
+
 def train_classification_model(analyser):
     print("\n--- Initializing Machine Learning Pipeline ---")
     
@@ -284,6 +361,54 @@ def train_regression_model(analyser):
     results_df.to_csv(save_path, index=False)
     print(f"Saved exact daily predictions to: '{save_path}'")
 
+def train_random_forest_regression(analyser):
+    print("\n--- Initializing Random Forest Regression Pipeline ---")
+
+    data = get_tabular_numpy_splits(analyser, lookahead=24, batch_size=32)
+
+    X_train = data["X_train"]
+    y_train = data["y_train"]
+    X_val = data["X_val"]
+    y_val = data["y_val"]
+    X_test = data["X_test"]
+    y_test = data["y_test"]
+    id_test = data["id_test"]
+    time_test = data["time_test"]
+
+    rf = RandomForestRegressor(
+        n_estimators=300,
+        max_depth=12,
+        min_samples_leaf=5,
+        random_state=42,
+        n_jobs=-1
+    )
+
+    rf.fit(X_train, y_train)
+
+    # Optional validation check
+    val_preds = rf.predict(X_val)
+    val_mse = mean_squared_error(y_val, val_preds)
+    val_mae = mean_absolute_error(y_val, val_preds)
+
+    print(f"Validation MSE: {val_mse:.4f}")
+    print(f"Validation MAE: {val_mae:.4f}")
+
+    # Final test predictions
+    test_preds = rf.predict(X_test)
+
+    results_df, final_mse, final_mae = evaluate_daily_assignment_loss_sklearn(
+        preds=test_preds,
+        y_true=y_test,
+        ids=id_test,
+        times=time_test,
+        model_name="Random Forest"
+    )
+
+    save_path = "final_daily_predictions_random_forest.csv"
+    results_df.to_csv(save_path, index=False)
+    print(f"Saved exact daily predictions to: '{save_path}'")
+
+    return rf, final_mse, final_mae
 
 def walk_forward_train(analyser, tabular=False):
     """ 
@@ -386,6 +511,9 @@ def main():
     # walk_forward_train(analyser, tabular=False)
     train_classification_model(analyser)
     # train_regression_model(analyser)
+
+    walk_forward_train(analyser)
+    train_regression_model(analyser)
 
 if __name__ == "__main__":
     main()

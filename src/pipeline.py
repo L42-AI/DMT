@@ -6,13 +6,7 @@ from sklearn.model_selection import TimeSeriesSplit
 from typing import Tuple, List
 from features.features_behavioural import add_step_behavioural_features
 from features.feature_pipeline import add_static_temporal_features, add_rolling_history
-from models import SimpleMLP, SimpleGRU, RandomClassificationBaseline, RandomRegressionBaseline, XGBoostClassifierWrapper
-from xgboost import XGBClassifier
-from analyser import Analyser
-
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.experimental import enable_iterative_imputer  # noqa
-from sklearn.impute import IterativeImputer
+from models import SimpleMLP, SimpleGRU, RandomClassificationBaseline, RandomRegressionBaseline
 
 class BasePipeline:
     CLASSIFICATION: bool
@@ -556,7 +550,7 @@ class TimeSeriesPipeline(BasePipeline):
             input_dim=self.input_dim, 
             hidden_dim=hidden_dim, 
             output_dim=self.num_classes, 
-            num_ids=self.num_ids, 
+            num_users=self.num_users, 
             embed_dim=embed_dim,
             dropout_rate=dropout_rate
         )
