@@ -229,41 +229,32 @@ class BasePipeline:
     def _build_tensors(self, X_df, y_series, id_series):
         raise NotImplementedError()
 
-    def process_targets_l(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
-        if self.CLASSIFICATION:
-            bins = np.linspace(1.0, 10.0, self.num_classes + 1)
-            binned = pd.cut(y_series, bins=bins, labels=False, include_lowest=True)
-            self.class_mapping = y_series.groupby(binned).mean().to_dict()
-            y_series = binned
-            y_dtype = torch.long
-        else:
-            self.class_mapping = None
-            y_dtype = torch.float32
-        return y_series, y_dtype
-
-    def process_targets(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
-        """ Make quantile cut bins for classification or return float dtype for regression. """
-        if self.CLASSIFICATION:
-            y_binned = pd.qcut(y_series, q=self.num_classes, labels=False, duplicates='drop')
-
-            self.class_mapping = y_series.groupby(y_binned).mean().to_dict()
-            y_series = y_binned
-            y_dtype = torch.long
-        else:
-            self.class_mapping = None
-            y_dtype = torch.float32
-        return y_series, y_dtype
-
     def fit_transform_targets(self, y_train: np.ndarray) -> np.ndarray:
         """ Fits quantile bins strictly on training data to prevent leakage. """
         if not self.CLASSIFICATION:
             self.class_mapping = None
             return y_train
 
+        y_flat = y_train.flatten()
+
+        # ==========================================
+        # 🐛 FIX: The Jitter Method to break ties
+        # ==========================================
+        # Add infinitesimal noise to prevent bin boundaries from colliding on exact duplicates.
+        # A fixed random seed ensures this step is 100% reproducible across runs.
+        np.random.seed(42) 
+        jitter = np.random.normal(loc=0.0, scale=1e-6, size=y_flat.shape)
+        y_jittered = y_flat + jitter
+
         # FIT & TRANSFORM (Training Data Only)
         y_binned, self.bin_edges = pd.qcut(
-            y_train.flatten(), q=self.num_classes, labels=False, duplicates='drop', retbins=True
+            y_jittered, q=self.num_classes, labels=False, duplicates='drop', retbins=True
         )
+
+        # # FIT & TRANSFORM (Training Data Only)
+        # y_binned, self.bin_edges = pd.qcut(
+        #     y_train.flatten(), q=self.num_classes, labels=False, duplicates='drop', retbins=True
+        # )
         
         # Replace outer edges with infinity so unseen test extremes don't become NaNs
         self.bin_edges[0] = -float('inf')
