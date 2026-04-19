@@ -250,7 +250,9 @@ class BasePipeline:
         y_binned, self.bin_edges = pd.qcut(
             y_jittered, q=self.num_classes, labels=False, duplicates='drop', retbins=True
         )
-
+        import matplotlib.pyplot as plt
+        plt.hist(y_binned)
+        plt.show()
         # # FIT & TRANSFORM (Training Data Only)
         # y_binned, self.bin_edges = pd.qcut(
         #     y_train.flatten(), q=self.num_classes, labels=False, duplicates='drop', retbins=True

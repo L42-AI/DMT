@@ -36,7 +36,7 @@ EPOCHS = 20
 # XGBoost hyperparameters
 XGBOOST_PARAMS = {
     'n_estimators': 100,
-    'learning_rate': 0.01,
+    'learning_rate': 0.1,
     'max_depth': 3,
     'subsample': 0.8,
     'colsample_bytree': 0.8,
@@ -463,7 +463,8 @@ def train_model(analyser, classification: bool, tabular: bool, save_plotting: bo
             print("Model: XGBoost Classifier")
             model = pipeline.build_xgboost_model()
             model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
-            test_preds = model.predict(X_test)
+            # test_preds = model.predict(X_test)
+            test_preds = model.predict_proba(X_test)
             model_name = "XGBoost"
         else:
             print("Model: Random Forest Regressor")

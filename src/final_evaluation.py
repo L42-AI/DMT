@@ -8,8 +8,8 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 def _get_numpy_predictions(preds, ids, times, freq='D', class_mapping=None):
     """Formats raw numpy arrays into the standardized prediction DataFrame."""
-    
     # --- AUTO-DETECT CLASSIFICATION VS REGRESSION ---
+    print(preds.shape)
     if preds.ndim > 1 and preds.shape[1] > 1:
         predicted_classes = np.argmax(preds, axis=1)
         if class_mapping:
@@ -25,7 +25,7 @@ def _get_numpy_predictions(preds, ids, times, freq='D', class_mapping=None):
     # check for correct scale of timestamps and convert if necessary
     if df['timestamp'].max() > 1e12:  # Likely in milliseconds
         df['timestamp'] = df['timestamp'] / 1000
-    df['period'] = pd.to_datetime(df['timestamp'] * 1000, unit='s').dt.floor(freq)
+    df['period'] = pd.to_datetime(df['timestamp'], unit='s').dt.floor(freq)
     return df.groupby(['id', 'period'])['predicted_mood'].mean().reset_index()
 
 def _get_predictions(model, dataloader, device, freq='D', class_mapping=None):
@@ -128,6 +128,7 @@ def evaluate_sklearn_predictions(analyser, preds, ids, times, model_name="Random
 
     # Inner merge implicitly filters out non-overlapping periods
     results_df = pd.merge(pred_agg, truth_agg, on=['id', 'period'], how='inner')
+    print(results_df.head())
 
     # RF predicts next days also for days that have no mood recorded, so we may have some NaNs after the merge. We should drop them before metric calculation.
     results_df.dropna(inplace=True)  # Ensure no NaNs before metric calculation
