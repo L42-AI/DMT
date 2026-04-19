@@ -47,7 +47,7 @@ class BasePipeline:
     def _scale_features(self, X_train, X_val, X_test):
         # Implement your scaling logic here
         return X_train, X_val, X_test
-
+    
     def _engineer_leaky_covariates(self, df: pd.DataFrame) -> pd.DataFrame:
         leaky_columns = ['circumplex.valence', 'circumplex.arousal']
         for col in leaky_columns:
