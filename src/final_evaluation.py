@@ -6,6 +6,20 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
+def _get_numpy_predictions(preds, ids, times, freq='D'):
+    """Formats raw numpy arrays into the standardized prediction DataFrame."""
+    df = pd.DataFrame({
+        'id': ids, 
+        'timestamp': times, 
+        'predicted_mood': preds
+    })
+    
+    # Format time and rescale (0-1 -> 1-10)
+    df['period'] = pd.to_datetime(df['timestamp'], unit='s').dt.floor(freq)
+    df['predicted_mood'] = df['predicted_mood'] * 9 + 1
+    
+    return df.groupby(['id', 'period'])['predicted_mood'].mean().reset_index()
+
 def _get_predictions(model, dataloader, device, freq='D'):
     """Runs model inference and aggregates predictions to the specified timeframe."""
     model.eval()
@@ -64,6 +78,43 @@ def evaluate_predictions(analyser, model, dataloader, device='cpu'):
     mae = mean_absolute_error(results_df['actual_mood'], results_df['predicted_mood'])
     
     print(f"\n{'='*45}\n🎯 SOURCE-OF-TRUTH METRICS ({freq})\n{'='*45}")
+    print(f"Successfully Merged Windows: {len(results_df):,}")
+    print(f"Mean Squared Error (MSE):    {mse:.4f}")
+    print(f"Mean Absolute Error (MAE):   {mae:.4f}\n{'='*45}")
+    
+    return results_df, mse, mae
+
+def evaluate_sklearn_predictions(analyser, preds, ids, times, model_name="Random Forest"):
+    """
+    Evaluates Numpy/Scikit-Learn model predictions against the absolute ground truth.
+    
+    Args:
+        analyser: Data analyser instance containing the raw dataset.
+        preds: Numpy array of model predictions.
+        ids: Numpy array of user IDs corresponding to the predictions.
+        times: Numpy array of timestamps corresponding to the predictions.
+        model_name: String used for the terminal printout.
+        
+    Returns:
+        results_df: DataFrame containing the merged actual and predicted values.
+        mse: Mean Squared Error.
+        mae: Mean Absolute Error.
+    """
+    freq = 'D'
+    
+    # 1. Use the new Numpy helper
+    pred_agg = _get_numpy_predictions(preds, ids, times, freq)
+    
+    # 2. Reuse your exact same Ground Truth helper!
+    truth_agg = _get_ground_truth(analyser, freq)
+    
+    # Inner merge implicitly filters out non-overlapping periods
+    results_df = pd.merge(pred_agg, truth_agg, on=['id', 'period'], how='inner')
+    
+    mse = mean_squared_error(results_df['actual_mood'], results_df['predicted_mood'])
+    mae = mean_absolute_error(results_df['actual_mood'], results_df['predicted_mood'])
+    
+    print(f"\n{'='*45}\n🎯 {model_name.upper()} SOURCE-OF-TRUTH METRICS ({freq})\n{'='*45}")
     print(f"Successfully Merged Windows: {len(results_df):,}")
     print(f"Mean Squared Error (MSE):    {mse:.4f}")
     print(f"Mean Absolute Error (MAE):   {mae:.4f}\n{'='*45}")

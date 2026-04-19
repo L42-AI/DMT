@@ -12,7 +12,7 @@ from trainer import Trainer
 from visualiser import Visualiser
 from analyser import Analyser
 
-from final_evaluation import evaluate_predictions, plot_prediction_distributions
+from final_evaluation import evaluate_predictions, plot_prediction_distributions, evaluate_sklearn_predictions
 
 import data as _data
 
@@ -256,7 +256,8 @@ def train_regression_model(analyser, save_plotting: bool = False):
     )
 
     plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
-def train_random_forest_regression(analyser):
+
+def train_random_forest_regression(analyser, save_plotting: bool = False):
     print("\n--- Initializing Random Forest Regression Pipeline ---")
 
     data = get_tabular_numpy_splits(analyser, lookahead=24, batch_size=32)
@@ -291,7 +292,7 @@ def train_random_forest_regression(analyser):
     # Final test predictions
     test_preds = rf.predict(X_test)
 
-    results_df, final_mse, final_mae = evaluate_daily_assignment_loss_sklearn(
+    results_df, final_mse, final_mae = evaluate_sklearn_predictions(
         preds=test_preds,
         y_true=y_test,
         ids=id_test,
@@ -299,9 +300,7 @@ def train_random_forest_regression(analyser):
         model_name="Random Forest"
     )
 
-    save_path = "final_daily_predictions_random_forest.csv"
-    results_df.to_csv(save_path, index=False)
-    print(f"Saved exact daily predictions to: '{save_path}'")
+    plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
 
     return rf, final_mse, final_mae
 
@@ -404,7 +403,8 @@ def walk_forward_train(analyser, tabular=False):
 def main():
     analyser = prepare_data()
     # walk_forward_train(analyser, tabular=False)
-    train_classification_model(analyser, save_plotting=True)
+    # train_classification_model(analyser, save_plotting=True)
+    train_random_forest_regression(analyser, save_plotting=True)
     # train_regression_model(analyser, save_plotting=True)
 
 if __name__ == "__main__":
