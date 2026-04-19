@@ -19,11 +19,11 @@ import data as _data
 # Data hyperparameters
 INTERVAL = 1
 UNIT = 'H'
-NUM_CLASSES = 10
+NUM_CLASSES = 3
 
 # Model hyperparameters
 SEQ_LEN = int(7 * 1 / INTERVAL) if UNIT == 'D' else int(7 * 24 / INTERVAL)
-EMBEDDING_DIM = 6
+EMBEDDING_DIM = 8
 HIDDEN_DIM = 32
 DROP_RATE = 0.7
 
@@ -31,7 +31,7 @@ DROP_RATE = 0.7
 LR = 0.001
 BATCH_SIZE = 32
 WEIGHT_DECAY = 1e-3
-EPOCHS = 100
+EPOCHS = 50
 
 def _extract_numpy_from_loader(loader: torch.utils.data.DataLoader) -> tuple[np.ndarray, np.ndarray]:
     """Helper function to convert a DataLoader back to NumPy arrays."""
@@ -400,6 +400,104 @@ def walk_forward_train(analyser, tabular=False):
 
     return fold_results, test_metrics
 
+def train_model(analyser, classification: bool, tabular: bool, save_plotting: bool = False):
+    """
+    Unified training pipeline router.
+    
+    Args:
+        analyser: The Analyser object containing processed data.
+        classification (bool): True for Classification (3 classes), False for Regression (1-10 scale).
+        tabular (bool): True for tree-based models (XGBoost/RF), False for recurrent models (GRU).
+    """
+    task_str = "Classification" if classification else "Regression"
+    mode_str = "Tabular" if tabular else "TimeSeries"
+    
+    print("\n" + "="*45)
+    print(f"🚀 INITIALIZING PIPELINE: {mode_str} {task_str}")
+    print("="*45)
+
+    # 1. Pipeline Routing
+    if tabular and classification:
+        pipeline = TabularClassification(analyser, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE, windows=[3, 5])
+    elif tabular and not classification:
+        pipeline = TabularRegression(analyser, batch_size=BATCH_SIZE, lookahead=24)
+    elif not tabular and classification:
+        pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE)
+    else:  # not tabular and not classification
+        pipeline = TimeSeriesRegression(analyser, seq_len=SEQ_LEN, batch_size=BATCH_SIZE)
+
+    # ==========================================
+    # ROUTE A: TABULAR (XGBoost / Random Forest)
+    # ==========================================
+    if tabular:
+        # Extract Numpy arrays for Scikit-Learn API
+        data = get_tabular_numpy_splits(pipeline)
+        
+        X_train, y_train = data["X_train"], data["y_train"]
+        X_val, y_val = data["X_val"], data["y_val"]
+        X_test, y_test = data["X_test"], data["y_test"]
+        
+        if classification:
+            print("Model: XGBoost Classifier")
+            model = pipeline.build_xgboost_model()
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+            test_preds = model.predict(X_test)
+            model_name = "XGBoost"
+        else:
+            print("Model: Random Forest Regressor")
+            model = RandomForestRegressor(
+                n_estimators=300, 
+                max_depth=12, 
+                min_samples_leaf=5, 
+                random_state=42, 
+                n_jobs=-1
+            )
+            model.fit(X_train, y_train)
+            test_preds = model.predict(X_test)
+            model_name = "Random Forest"
+
+        # Evaluate Tabular
+        results_df, final_mse, final_mae = evaluate_sklearn_predictions(
+            analyser=analyser,
+            preds=test_preds,
+            ids=data["id_test"],
+            times=data["time_test"],
+            model_name=model_name,
+            class_mapping=pipeline.class_mapping
+        )
+
+    # ==========================================
+    # ROUTE B: TIME-SERIES (PyTorch GRU)
+    # ==========================================
+    else:
+        # Extract PyTorch DataLoaders
+        train_loader, val_loader, test_loader = pipeline.get_dataloaders()
+        
+        sample_id, sample_X, sample_y, sample_time = next(iter(train_loader))
+        print(f"Model: GRU (Detected {sample_X.shape[-1]} input features)")
+
+        model = pipeline.build_model(hidden_dim=HIDDEN_DIM, embed_dim=EMBEDDING_DIM, dropout_rate=DROP_RATE)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+        
+        # Route Loss Function
+        criterion = torch.nn.CrossEntropyLoss() if classification else torch.nn.MSELoss()
+        task_type = 'classification' if classification else 'regression'
+
+        trainer = Trainer(model, optimizer, criterion, task_type=task_type)
+        trainer.fit(train_loader, val_loader=val_loader, num_epochs=EPOCHS, save_history=save_plotting)
+        
+        # Evaluate PyTorch
+        results_df, final_mse, final_mae = evaluate_predictions(
+            analyser=analyser,
+            model=trainer.model, 
+            dataloader=test_loader, 
+            device=trainer.device,
+            class_mapping=pipeline.class_mapping
+        )
+
+    # 3. Final Outputs
+    plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
+    return results_df, final_mse, final_mae
 
 
 def main():
