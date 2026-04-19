@@ -40,6 +40,7 @@ XGBOOST_PARAMS = {
     'max_depth': 3,
     'subsample': 0.8,
     'colsample_bytree': 0.8,
+    'n_jobs': 1
 }
 
 # Walk-forward validation hyperparameters
@@ -195,6 +196,13 @@ def get_tabular_numpy_splits(pipeline: TabularRegression, train_ratio=0.7, val_r
     X_train, y_train, id_train, time_train = X_arr[train_idx], y_arr[train_idx], id_arr[train_idx], time_arr[train_idx]
     X_val, y_val, id_val, time_val = X_arr[val_idx], y_arr[val_idx], id_arr[val_idx], time_arr[val_idx]
     X_test, y_test, id_test, time_test = X_arr[test_idx], y_arr[test_idx], id_arr[test_idx], time_arr[test_idx]
+
+    if getattr(pipeline, 'CLASSIFICATION', False):
+        y_train = pipeline.fit_transform_targets(y_train)
+        y_val = pipeline.transform_targets(y_val)
+        y_test = pipeline.transform_targets(y_test)
+
+    X_train, X_val, X_test = pipeline._scale_features(X_train, X_val, X_test)
 
     return {
         "pipeline": pipeline,
@@ -414,22 +422,31 @@ def walk_forward_train(analyser, tabular=False):
 
     return fold_results, test_metrics
 
-def train_model(analyser, classification: bool, tabular: bool, seq_len=7, embed_dim=8, windows=[3, 5], save_plotting: bool = False):
+def train_model(analyser, classification: bool, tabular: bool, save_plotting: bool = False):
+    """
+    Unified training pipeline router.
+    
+    Args:
+        analyser: The Analyser object containing processed data.
+        classification (bool): True for Classification (3 classes), False for Regression (1-10 scale).
+        tabular (bool): True for tree-based models (XGBoost/RF), False for recurrent models (GRU).
+    """
     task_str = "Classification" if classification else "Regression"
     mode_str = "Tabular" if tabular else "TimeSeries"
     
-    # We suppress prints during tuning so multi-core output doesn't turn into a messy wall of text
-    print(f"\n🚀 INITIALIZING PIPELINE: {mode_str} {task_str}")
+    print("\n" + "="*45)
+    print(f"🚀 INITIALIZING PIPELINE: {mode_str} {task_str}")
+    print("="*45)
 
-    # 1. Pipeline Routing (USING THE NEW ARGUMENTS)
+    # 1. Pipeline Routing
     if tabular and classification:
-        pipeline = TabularClassification(analyser, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE, windows=windows)
+        pipeline = TabularClassification(analyser, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE, windows=[3, 5])
     elif tabular and not classification:
-        pipeline = TabularRegression(analyser, batch_size=BATCH_SIZE, lookahead=24, windows=windows)
+        pipeline = TabularRegression(analyser, batch_size=BATCH_SIZE, lookahead=24)
     elif not tabular and classification:
-        pipeline = TimeSeriesClassification(analyser, seq_len=seq_len, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE)
-    else:
-        pipeline = TimeSeriesRegression(analyser, seq_len=seq_len, batch_size=BATCH_SIZE)
+        pipeline = TimeSeriesClassification(analyser, seq_len=SEQ_LEN, num_classes=NUM_CLASSES, batch_size=BATCH_SIZE)
+    else:  # not tabular and not classification
+        pipeline = TimeSeriesRegression(analyser, seq_len=SEQ_LEN, batch_size=BATCH_SIZE)
 
     # ==========================================
     # ROUTE A: TABULAR (XGBoost / Random Forest)
@@ -481,7 +498,7 @@ def train_model(analyser, classification: bool, tabular: bool, seq_len=7, embed_
         sample_id, sample_X, sample_y, sample_time = next(iter(train_loader))
         print(f"Model: GRU (Detected {sample_X.shape[-1]} input features)")
 
-        model = pipeline.build_model(hidden_dim=HIDDEN_DIM, embed_dim=embed_dim, dropout_rate=DROP_RATE)
+        model = pipeline.build_model(hidden_dim=HIDDEN_DIM, embed_dim=EMBEDDING_DIM, dropout_rate=DROP_RATE)
         optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
         
         # Route Loss Function
@@ -501,17 +518,18 @@ def train_model(analyser, classification: bool, tabular: bool, seq_len=7, embed_
         )
 
     # 3. Final Outputs
-    # plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
+    plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
     return results_df, final_mse, final_mae
 
 
 def main():
     analyser = prepare_data()
     # train_model(analyser, classification=True, tabular=True, save_plotting=True)
-    walk_forward_train(analyser, tabular=True)
+    # walk_forward_train(analyser, tabular=True)
     # train_classification_model(analyser, save_plotting=True)
     # train_random_forest_regression(analyser, save_plotting=True)
     # train_regression_model(analyser, save_plotting=True)
+    train_model(analyser, classification=True, tabular=True, save_plotting=False)
 
 if __name__ == "__main__":
     main()
