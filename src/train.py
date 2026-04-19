@@ -154,13 +154,11 @@ def plot_fold_class_distribution(folds, tabular=True):
     plt.tight_layout()
     plt.show()
 
-def get_tabular_numpy_splits(analyser, lookahead=24, batch_size=32, train_ratio=0.7, val_ratio=0.15):
+def get_tabular_numpy_splits(pipeline: TabularRegression, train_ratio=0.7, val_ratio=0.15):
     """
     Uses the existing TabularRegression pipeline to prepare engineered tabular features,
     then returns numpy arrays instead of PyTorch dataloaders.
     """
-    pipeline = TabularRegression(analyser, batch_size=batch_size, lookahead=lookahead)
-
     # Reuse your existing pipeline logic
     df = pipeline._prepare_base_data()
     df = pipeline._clean_data(df)
@@ -222,6 +220,7 @@ def train_classification_model(analyser, save_plotting: bool = False):
         model=trainer.model, 
         dataloader=test_loader, 
         device=trainer.device,
+        class_mapping=pipeline.class_mapping
     )
 
     plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
@@ -253,6 +252,7 @@ def train_regression_model(analyser, save_plotting: bool = False):
         model=trainer.model, 
         dataloader=test_loader, 
         device=trainer.device,
+        class_mapping=pipeline.class_mapping
     )
 
     plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)
@@ -260,7 +260,9 @@ def train_regression_model(analyser, save_plotting: bool = False):
 def train_random_forest_regression(analyser, save_plotting: bool = False):
     print("\n--- Initializing Random Forest Regression Pipeline ---")
 
-    data = get_tabular_numpy_splits(analyser, lookahead=24, batch_size=32)
+    pipeline = TabularRegression(analyser, batch_size=BATCH_SIZE, lookahead=24)
+
+    data = get_tabular_numpy_splits(pipeline)
 
     X_train = data["X_train"]
     y_train = data["y_train"]
@@ -298,7 +300,8 @@ def train_random_forest_regression(analyser, save_plotting: bool = False):
         # y_true=y_test,
         ids=id_test,
         times=time_test,
-        model_name="Random Forest"
+        model_name="Random Forest",
+        class_mapping=pipeline.class_mapping
     )
 
     plot_prediction_distributions(results_df, resolution=UNIT, save=save_plotting)

@@ -6,29 +6,26 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
-def _get_numpy_predictions(preds, ids, times, freq='D'):
+def _get_numpy_predictions(preds, ids, times, freq='D', class_mapping=None):
     """Formats raw numpy arrays into the standardized prediction DataFrame."""
     
     # --- AUTO-DETECT CLASSIFICATION VS REGRESSION ---
     if preds.ndim > 1 and preds.shape[1] > 1:
-        # Handle outputs from models like predict_proba()
-        preds = np.argmax(preds, axis=1) + 1
+        predicted_classes = np.argmax(preds, axis=1)
+        if class_mapping:
+            # Map the predicted class index back to the real mood centroid
+            preds = np.array([class_mapping.get(c, 5.0) for c in predicted_classes])
+        else:
+            preds = predicted_classes + 1 # Fallback if no mapping provided
     else:
         preds = preds.flatten()
         
-    df = pd.DataFrame({
-        'id': ids, 
-        'timestamp': times, 
-        'predicted_mood': preds
-    })
+    df = pd.DataFrame({'id': ids, 'timestamp': times, 'predicted_mood': preds})
     
-    # Format time and rescale (0.0-1.0 -> 1-10)
     df['period'] = pd.to_datetime(df['timestamp'] * 1000, unit='s').dt.floor(freq)
-    df['predicted_mood'] = df['predicted_mood']
-    
     return df.groupby(['id', 'period'])['predicted_mood'].mean().reset_index()
 
-def _get_predictions(model, dataloader, device, freq='D'):
+def _get_predictions(model, dataloader, device, freq='D', class_mapping=None):
     """Runs model inference and aggregates predictions to the specified timeframe."""
     model.eval()
     ids, times, preds = [], [], []
@@ -39,23 +36,23 @@ def _get_predictions(model, dataloader, device, freq='D'):
             outputs = model(id_t, X_t)
             
             # --- AUTO-DETECT CLASSIFICATION VS REGRESSION ---
-            # If output has multiple columns, it's outputting class probabilities/logits
             if outputs.dim() > 1 and outputs.shape[1] > 1:
-                # Take the most probable class (0-9) and normalize it to (0.0-1.0)
-                batch_preds = outputs.argmax(dim=1).float() + 1
+                predicted_classes = outputs.argmax(dim=1).cpu().numpy()
+                if class_mapping:
+                    # Map the predicted class index back to the real mood centroid
+                    batch_preds = np.array([class_mapping.get(c, 5.0) for c in predicted_classes])
+                else:
+                    batch_preds = predicted_classes + 1
             else:
-                batch_preds = outputs
+                batch_preds = outputs.cpu().numpy().flatten()
                 
             ids.extend(id_t.cpu().numpy())
             times.extend(time_t.cpu().numpy())
-            preds.extend(batch_preds.cpu().numpy().flatten())
+            preds.extend(batch_preds)
             
     df = pd.DataFrame({'id': ids, 'timestamp': times, 'predicted_mood': preds})
     
-    # Format time and rescale (0.0-1.0 -> 1-10)
     df['period'] = pd.to_datetime(df['timestamp'], unit='s').dt.floor(freq)
-    df['predicted_mood'] = df['predicted_mood']
-    
     return df.groupby(['id', 'period'])['predicted_mood'].mean().reset_index()
 
 def _get_ground_truth(analyser, freq='D'):
@@ -69,7 +66,7 @@ def _get_ground_truth(analyser, freq='D'):
     
     return df.groupby(['id', 'period'])['actual_mood'].mean().reset_index()
 
-def evaluate_predictions(analyser, model, dataloader, device='cpu'):
+def evaluate_predictions(analyser, model, dataloader, device='cpu', class_mapping=None):
     """
     Evaluates model predictions against the absolute ground truth.
     
@@ -86,7 +83,7 @@ def evaluate_predictions(analyser, model, dataloader, device='cpu'):
     """
     freq = 'D'
     
-    pred_agg = _get_predictions(model, dataloader, device, freq)
+    pred_agg = _get_predictions(model, dataloader, device, freq, class_mapping)
     truth_agg = _get_ground_truth(analyser, freq)
     
     # Inner merge implicitly filters out non-overlapping periods
@@ -102,7 +99,7 @@ def evaluate_predictions(analyser, model, dataloader, device='cpu'):
     
     return results_df, mse, mae
 
-def evaluate_sklearn_predictions(analyser, preds, ids, times, model_name="Random Forest"):
+def evaluate_sklearn_predictions(analyser, preds, ids, times, model_name="Random Forest", class_mapping=None):
     """
     Evaluates Numpy/Scikit-Learn model predictions against the absolute ground truth.
     
@@ -121,7 +118,7 @@ def evaluate_sklearn_predictions(analyser, preds, ids, times, model_name="Random
     freq = 'D'
     
     # 1. Use the new Numpy helper
-    pred_agg = _get_numpy_predictions(preds, ids, times, freq)
+    pred_agg = _get_numpy_predictions(preds, ids, times, freq, class_mapping)
     
     # 2. Reuse your exact same Ground Truth helper!
     truth_agg = _get_ground_truth(analyser, freq)

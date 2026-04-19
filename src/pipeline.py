@@ -199,18 +199,25 @@ class BasePipeline:
     def process_targets(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
         if self.CLASSIFICATION:
             bins = np.linspace(1.0, 10.0, self.num_classes + 1)
-            y_series = pd.cut(y_series, bins=bins, labels=False, include_lowest=True)
+            binned = pd.cut(y_series, bins=bins, labels=False, include_lowest=True)
+            self.class_mapping = y_series.groupby(binned).mean().to_dict()
+            y_series = binned
             y_dtype = torch.long
         else:
+            self.class_mapping = None
             y_dtype = torch.float32
         return y_series, y_dtype
 
     def process_targets_q(self, y_series: pd.Series) -> tuple[pd.Series, np.dtype]:
         """ Make quantile cut bins for classification or return float dtype for regression. """
         if self.CLASSIFICATION:
-            y_series = pd.qcut(y_series, q=self.num_classes, labels=False, duplicates='drop')
+            y_binned = pd.qcut(y_series, q=self.num_classes, labels=False, duplicates='drop')
+
+            self.class_mapping = y_series.groupby(y_binned).mean().to_dict()
+            y_series = y_binned
             y_dtype = torch.long
         else:
+            self.class_mapping = None
             y_dtype = torch.float32
         return y_series, y_dtype
 
