@@ -49,15 +49,32 @@ class BasePipeline:
         return X_train, X_val, X_test
     
     def _engineer_leaky_covariates(self, df: pd.DataFrame) -> pd.DataFrame:
-        leaky_columns = ['circumplex.valence', 'circumplex.arousal']
-        for col in leaky_columns:
-            if col in df.columns:
-                df[f'{col}_lag1'] = df.groupby('id')[col].shift(1)
+        df = df.copy().sort_values(['id', 'time'])
+        state_features = ['mood', 'circumplex.valence', 'circumplex.arousal']
+        
+        for col in state_features:
+            if col not in df.columns:
+                continue
                 
-        for col in leaky_columns:
-            if f'{col}_lag1' in df.columns:
-                df[f'{col}_lag1'] = df[f'{col}_lag1'].fillna(0.0)
-                
+            # 2. Prevent Leakage (Shift first!)
+            df[f'prev_{col}'] = df.groupby('id')[col].shift(1)
+            df[f'prev_{col}'] = df.groupby('id')[f'prev_{col}'].ffill().fillna(0.5)
+
+            # 3. Calculate Age (Hours since last report)
+            # We find where reports exist
+            has_report = df[col].notna()
+            
+            # Create a 'session' ID that increments every time a report is found
+            # This groups all hours following a report together
+            report_sessions = has_report.groupby(df['id']).cumsum()
+            
+            # Now we just count the entries within each session
+            # This resets to 0 every time a new report starts a new session
+            df[f'{col}_age'] = df.groupby(['id', report_sessions]).cumcount()
+            
+            # 4. Scale Age to 0-1 (Capped at 24 hours)
+            df[f'{col}_age'] = df[f'{col}_age'].clip(upper=24) / 24.0
+
         return df
 
     # --- ABSTRACT METHODS ---
