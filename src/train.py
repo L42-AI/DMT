@@ -6,6 +6,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 from pipeline import TimeSeriesClassification, TimeSeriesRegression, TabularClassification, TabularRegression
+from sklearn.ensemble import RandomForestRegressor
+from trainer import Trainer
 
 from trainer import Trainer
 from visualiser import Visualiser
